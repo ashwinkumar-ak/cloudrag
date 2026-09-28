@@ -1,0 +1,9 @@
+Metadata-Version: 2.4
+Name: cloudrag
+Version: 0.1.0
+Summary: A production-style cloud RAG application
+Requires-Python: >=3.14
+Requires-Dist: fastapi==0.141.1
+Requires-Dist: pydantic-settings==2.15.0
+Requires-Dist: psycopg[binary]==3.3.6
+Requires-Dist: uvicorn[standard]==0.54.0
