@@ -1,5 +1,8 @@
 import requests
 
+from backend.metrics import LLM_LATENCY
+import time
+
 
 class LLMService:
     def __init__(
@@ -11,22 +14,27 @@ class LLMService:
         self.base_url = base_url
 
     def generate(self, prompt: str) -> str:
-        response = requests.post(
-            f"{self.base_url}/api/generate",
-            json={
-                "model": self.model,
-                "prompt": prompt,
-                "stream": False,
-                "think": False,
-            },
-            timeout=120,
-        )
+        start = time.perf_counter()
+        try:
+            response = requests.post(
+                f"{self.base_url}/api/generate",
+                json={
+                    "model": self.model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "think": False,
+                },
+                timeout=120,
+            )
 
-        response.raise_for_status()
+            response.raise_for_status()
 
-        answer = response.json()["response"]
+            answer = response.json()["response"]
 
-        return self._clean_answer(answer)
+            return self._clean_answer(answer)
+        finally:
+            duration = time.perf_counter() - start
+            LLM_LATENCY.observe(duration)
 
     def _clean_answer(self, answer: str) -> str:
         if "</think>" in answer:

@@ -19,7 +19,13 @@ from backend.metrics import get_metrics
 
 import time
 
-from backend.metrics import REQUEST_COUNT, REQUEST_LATENCY
+from backend.metrics import (
+    get_metrics,
+    REQUEST_COUNT,
+    REQUEST_LATENCY,
+    RAG_REQUEST_COUNT,
+    RAG_REQUEST_LATENCY,
+)
 
 from backend.rag import RAGService
 
@@ -161,12 +167,19 @@ def metrics():
 
 @app.post("/ask", response_model=AskResponse)
 def ask(request: AskRequest):
-    answer, context = rag_service.answer(
-        question=request.question,
-        limit=request.limit,
-    )
+    start = time.perf_counter()
+    RAG_REQUEST_COUNT.inc()
 
-    return AskResponse(
-        answer=answer,
-        citations=context,
-    )
+    try:
+        answer, context = rag_service.answer(
+            question=request.question,
+            limit=request.limit,
+        )
+
+        return AskResponse(
+            answer=answer,
+            citations=context,
+        )
+    finally:
+        duration = time.perf_counter() - start
+        RAG_REQUEST_LATENCY.observe(duration)

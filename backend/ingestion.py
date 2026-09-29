@@ -1,5 +1,11 @@
+import time
+
 from backend.chunking import TextChunker
 from backend.embedding import EmbeddingService
+from backend.metrics import (
+    DOCUMENT_INGESTION_COUNT,
+    DOCUMENT_INGESTION_LATENCY,
+)
 from backend.repositories.chunks import ChunkRepository
 from backend.repositories.documents import DocumentRepository
 
@@ -14,14 +20,11 @@ class IngestionService:
             overlap_sentences=1,
         )
 
-    def ingest_text(
-    self,
-    filename: str,
-    content_type: str,
-    text: str,
-    ) -> int:
+    def ingest_text(self, filename: str, content_type: str, text: str) -> int:
         if not text.strip():
             raise ValueError("Document text must not be empty")
+    
+        start = time.perf_counter()
     
         document_id = self.document_repository.create_document(
             filename=filename,
@@ -29,10 +32,7 @@ class IngestionService:
             file_size=len(text.encode("utf-8")),
         )
     
-        self.document_repository.update_status(
-            document_id,
-            "processing",
-        )
+        self.document_repository.update_status(document_id, "processing")
     
         try:
             chunks = self.chunker.split(text)
@@ -47,16 +47,16 @@ class IngestionService:
                     embedding=embedding,
                 )
     
-            self.document_repository.update_status(
-                document_id,
-                "completed",
-            )
+            self.document_repository.update_status(document_id, "completed")
+    
+            DOCUMENT_INGESTION_COUNT.inc()
+    
+            return document_id
     
         except Exception:
-            self.document_repository.update_status(
-                document_id,
-                "failed",
-            )
+            self.document_repository.update_status(document_id, "failed")
             raise
         
-        return document_id
+        finally:
+            duration = time.perf_counter() - start
+            DOCUMENT_INGESTION_LATENCY.observe(duration)
