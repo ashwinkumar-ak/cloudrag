@@ -12,6 +12,15 @@ from backend.ingestion import IngestionService
 
 from fastapi.middleware.cors import CORSMiddleware
 
+from fastapi import Response
+from prometheus_client import CONTENT_TYPE_LATEST
+
+from backend.metrics import get_metrics
+
+import time
+
+from backend.metrics import REQUEST_COUNT, REQUEST_LATENCY
+
 embedding_service = EmbeddingService()
 chunk_repository = ChunkRepository()
 ingestion_service = IngestionService()
@@ -21,6 +30,19 @@ app = FastAPI(
     description="Production-style document intelligence and RAG API",
     version="0.1.0",
 )
+
+@app.middleware("http")
+async def metrics_middleware(request, call_next):
+    start = time.perf_counter()
+
+    response = await call_next(request)
+
+    duration = time.perf_counter() - start
+
+    REQUEST_COUNT.inc()
+    REQUEST_LATENCY.observe(duration)
+
+    return response
 
 app.add_middleware(
     CORSMiddleware,
@@ -126,3 +148,10 @@ async def upload_document(file: UploadFile = File(...)):
         "filename": file.filename,
         "status": "completed",
     }
+
+@app.get("/metrics")
+def metrics():
+    return Response(
+        content=get_metrics(),
+        media_type=CONTENT_TYPE_LATEST,
+    )

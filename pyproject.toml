@@ -10,6 +10,7 @@ dependencies = [
     "uvicorn[standard]==0.54.0",
     "python-multipart==0.0.22",
     "sentence-transformers==6.1.0",
+    "prometheus-client==0.23.1",
 ]
 
 [tool.setuptools.packages.find]
