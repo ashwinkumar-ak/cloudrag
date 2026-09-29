@@ -11,5 +11,15 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cloudrag-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - postgres
+
 volumes:
   postgres_data:

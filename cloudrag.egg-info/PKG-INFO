@@ -7,3 +7,4 @@ Requires-Dist: fastapi==0.141.1
 Requires-Dist: pydantic-settings==2.15.0
 Requires-Dist: psycopg[binary]==3.3.6
 Requires-Dist: uvicorn[standard]==0.54.0
+Requires-Dist: python-multipart==0.0.22

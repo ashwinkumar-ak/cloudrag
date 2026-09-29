@@ -1,0 +1,1 @@
+CloudRAG is a document intelligence platform. It uses PostgreSQL and pgvector to store and search document embeddings.
