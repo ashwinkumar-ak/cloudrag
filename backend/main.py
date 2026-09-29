@@ -4,7 +4,7 @@ from backend.config import settings
 from backend.health import get_health_status, is_ready
 
 from backend.embedding import EmbeddingService
-from backend.models import SearchRequest, SearchResult
+from backend.models import AskRequest, AskResponse, SearchRequest, SearchResult
 from backend.repositories.chunks import ChunkRepository
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -21,9 +21,12 @@ import time
 
 from backend.metrics import REQUEST_COUNT, REQUEST_LATENCY
 
+from backend.rag import RAGService
+
 embedding_service = EmbeddingService()
 chunk_repository = ChunkRepository()
 ingestion_service = IngestionService()
+rag_service = RAGService()
 
 app = FastAPI(
     title="CloudRAG API",
@@ -154,4 +157,16 @@ def metrics():
     return Response(
         content=get_metrics(),
         media_type=CONTENT_TYPE_LATEST,
+    )
+
+@app.post("/ask", response_model=AskResponse)
+def ask(request: AskRequest):
+    answer, context = rag_service.answer(
+        question=request.question,
+        limit=request.limit,
+    )
+
+    return AskResponse(
+        answer=answer,
+        citations=context,
     )

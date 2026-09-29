@@ -24,3 +24,20 @@ class SearchResult(BaseModel):
     chunk_index: int
     content: str
     distance: float
+
+class AskRequest(BaseModel):
+    question: str = Field(min_length=1)
+    limit: int = Field(default=5, ge=1, le=10)
+
+
+class Citation(BaseModel):
+    chunk_id: int
+    document_id: int
+    filename: str
+    chunk_index: int
+    content: str
+
+
+class AskResponse(BaseModel):
+    answer: str
+    citations: list[Citation]

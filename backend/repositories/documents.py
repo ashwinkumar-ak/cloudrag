@@ -79,3 +79,21 @@ class DocumentRepository:
                 )
     
             connection.commit()
+
+    def get_filename(self, document_id: int) -> str | None:
+        with psycopg.connect(settings.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT filename
+                    FROM documents
+                    WHERE id = %s;
+                    """,
+                    (document_id,),
+                )
+                row = cursor.fetchone()
+
+                if row is None:
+                    return None
+
+                return row[0]
