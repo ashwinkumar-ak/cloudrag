@@ -1,5 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+
 from backend.config import settings
+from backend.health import get_health_status, is_ready
 
 app = FastAPI(
     title="CloudRAG API",
@@ -11,10 +13,10 @@ app = FastAPI(
 @app.get("/health")
 def health_check():
     return {
-        "status": "ok",
         "service": settings.app_name,
         "environment": settings.environment,
-        }
+        **get_health_status(),
+    }
 
 @app.get("/live")
 def liveness_check():
@@ -24,6 +26,11 @@ def liveness_check():
 
 @app.get("/ready")
 def readiness_check():
+    if not is_ready():
+        raise HTTPException(
+            status_code=503,
+            detail="Database is not ready",
+        )
     return {
         "status": "ready"
         }
