@@ -1,3 +1,4 @@
+README.md
 pyproject.toml
 backend/__init__.py
 backend/chunk_test.py
@@ -10,8 +11,11 @@ backend/embedding.py
 backend/health.py
 backend/ingestion.py
 backend/ingestion_test.py
+backend/llm.py
 backend/main.py
+backend/metrics.py
 backend/models.py
+backend/rag.py
 backend/repository_test.py
 backend/search_test.py
 backend/text_processing.py
@@ -26,3 +30,5 @@ cloudrag.egg-info/dependency_links.txt
 cloudrag.egg-info/requires.txt
 cloudrag.egg-info/top_level.txt
 tests/test_chunking.py
+tests/test_health.py
+tests/test_health_api.py

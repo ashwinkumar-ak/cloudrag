@@ -8,3 +8,6 @@ Requires-Dist: pydantic-settings==2.15.0
 Requires-Dist: psycopg[binary]==3.3.6
 Requires-Dist: uvicorn[standard]==0.54.0
 Requires-Dist: python-multipart==0.0.22
+Requires-Dist: sentence-transformers==6.1.0
+Requires-Dist: prometheus-client==0.23.1
+Requires-Dist: requests
