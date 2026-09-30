@@ -1,9 +1,9 @@
 import json
-import os
 import time
 
 import requests
 
+from backend.config import settings
 from backend.metrics import LLM_LATENCY
 
 
@@ -14,63 +14,94 @@ class LLMGenerationError(RuntimeError):
 class LLMService:
     def __init__(
         self,
-        model: str = "qwen3:4b",
-        base_url: str | None = None,
+        model: str | None = None,
+        api_key: str | None = None,
     ):
-        self.model = model
-        self.base_url = base_url or os.getenv(
-            "OLLAMA_BASE_URL",
-            "http://localhost:11434",
-        )
+        self.model = model or settings.gemini_model
+        self.api_key = api_key or settings.gemini_api_key
+
+        self.base_url = settings.gemini_api_base_url
 
     def generate(self, prompt: str) -> str:
+        if not self.api_key:
+            raise RuntimeError(
+                "GEMINI_API_KEY is not configured."
+            )
         start = time.perf_counter()
 
         try:
             try:
                 response = requests.post(
-                    f"{self.base_url}/api/generate",
+                    f"{self.base_url}/models/"
+                    f"{self.model}:generateContent",
+                    headers={
+                        "Content-Type": "application/json",
+                        "x-goog-api-key": self.api_key,
+                    },
                     json={
-                        "model": self.model,
-                        "prompt": prompt,
-                        "stream": False,
-                        "think": False,
-                        "format": {
-                            "type": "object",
-                            "properties": {
-                                "answer": {
-                                    "type": "string"
-                                }
-                            },
-                            "required": ["answer"],
-                        },
-                        "options": {
+                        "contents": [
+                            {
+                                "parts": [
+                                    {"text": prompt}
+                                ]
+                            }
+                        ],
+                        "generationConfig": {
                             "temperature": 0,
-                            "num_predict": 180,
+                            "maxOutputTokens": 180,
+                            "responseMimeType": (
+                                "application/json"
+                            ),
+                            "responseSchema": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "answer": {
+                                        "type": "STRING"
+                                    }
+                                },
+                                "required": ["answer"],
+                            },
                         },
                     },
-                    timeout=300,
+                    timeout=120,
                 )
 
                 response.raise_for_status()
 
             except requests.RequestException as exc:
                 raise LLMGenerationError(
-                    "The local language model could not generate a response."
+                    "The cloud language model could not "
+                    "generate a response."
                 ) from exc
 
             try:
                 data = response.json()
             except ValueError as exc:
                 raise LLMGenerationError(
-                    "The language model returned an invalid response."
+                    "The language model returned an "
+                    "invalid response."
                 ) from exc
 
-            raw_response = data.get("response")
+            candidates = data.get("candidates")
+
+            if not isinstance(candidates, list) or not candidates:
+                raise LLMGenerationError(
+                    "The language model returned no candidates."
+                )
+
+            content = candidates[0].get("content", {})
+            parts = content.get("parts", [])
+
+            if not isinstance(parts, list) or not parts:
+                raise LLMGenerationError(
+                    "The language model returned no content."
+                )
+
+            raw_response = parts[0].get("text")
 
             if not isinstance(raw_response, str):
                 raise LLMGenerationError(
-                    "The language model returned an invalid response."
+                    "The language model returned invalid content."
                 )
 
             answer = self._parse_answer(raw_response)
@@ -101,6 +132,4 @@ class LLMService:
         except json.JSONDecodeError:
             pass
 
-        # Fallback in case the local Ollama version/model does
-        # not perfectly follow the JSON schema.
         return raw_response

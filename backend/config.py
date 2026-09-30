@@ -21,6 +21,16 @@ class Settings(BaseSettings):
 
     jwt_access_token_expire_minutes: int = 1440
 
+    gemini_api_key: str | None = None
+
+    gemini_model: str = "gemini-2.5-flash-lite"
+
+    gemini_embedding_model: str = "gemini-embedding-2"
+
+    gemini_api_base_url: str = (
+        "https://generativelanguage.googleapis.com/v1beta"
+    )
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
