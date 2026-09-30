@@ -61,5 +61,5 @@ def test_ready_endpoint_when_dependencies_are_unavailable(monkeypatch):
 
     assert response.status_code == 503
     assert response.json() == {
-        "detail": "Database is not ready",
+        "detail": "Required dependencies are not ready",
     }

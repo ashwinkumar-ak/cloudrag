@@ -4,23 +4,30 @@ from backend.config import settings
 
 
 class ChatRepository:
+
     def create_session(
         self,
+        user_id: int,
         title: str = "New Chat",
     ) -> int:
         with psycopg.connect(
             settings.database_url
         ) as connection:
+
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
                     INSERT INTO chat_sessions (
+                        user_id,
                         title
                     )
-                    VALUES (%s)
+                    VALUES (%s, %s)
                     RETURNING id
                     """,
-                    (title,),
+                    (
+                        user_id,
+                        title,
+                    ),
                 )
 
                 session_id = cursor.fetchone()[0]
@@ -29,10 +36,14 @@ class ChatRepository:
 
         return session_id
 
-    def list_sessions(self):
+    def list_sessions(
+        self,
+        user_id: int,
+    ):
         with psycopg.connect(
             settings.database_url
         ) as connection:
+
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
@@ -42,8 +53,10 @@ class ChatRepository:
                         created_at,
                         updated_at
                     FROM chat_sessions
+                    WHERE user_id = %s
                     ORDER BY updated_at DESC
-                    """
+                    """,
+                    (user_id,),
                 )
 
                 return cursor.fetchall()
@@ -51,10 +64,12 @@ class ChatRepository:
     def get_session(
         self,
         session_id: int,
+        user_id: int,
     ):
         with psycopg.connect(
             settings.database_url
         ) as connection:
+
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
@@ -65,8 +80,12 @@ class ChatRepository:
                         updated_at
                     FROM chat_sessions
                     WHERE id = %s
+                    AND user_id = %s
                     """,
-                    (session_id,),
+                    (
+                        session_id,
+                        user_id,
+                    ),
                 )
 
                 return cursor.fetchone()
@@ -74,18 +93,24 @@ class ChatRepository:
     def delete_session(
         self,
         session_id: int,
+        user_id: int,
     ) -> bool:
         with psycopg.connect(
             settings.database_url
         ) as connection:
+
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
                     DELETE FROM chat_sessions
                     WHERE id = %s
+                    AND user_id = %s
                     RETURNING id
                     """,
-                    (session_id,),
+                    (
+                        session_id,
+                        user_id,
+                    ),
                 )
 
                 deleted = cursor.fetchone()
@@ -97,11 +122,13 @@ class ChatRepository:
     def update_title(
         self,
         session_id: int,
+        user_id: int,
         title: str,
     ) -> None:
         with psycopg.connect(
             settings.database_url
         ) as connection:
+
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
@@ -110,10 +137,12 @@ class ChatRepository:
                         title = %s,
                         updated_at = NOW()
                     WHERE id = %s
+                    AND user_id = %s
                     """,
                     (
                         title,
                         session_id,
+                        user_id,
                     ),
                 )
 
@@ -122,18 +151,24 @@ class ChatRepository:
     def touch_session(
         self,
         session_id: int,
+        user_id: int,
     ) -> None:
         with psycopg.connect(
             settings.database_url
         ) as connection:
+
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
                     UPDATE chat_sessions
                     SET updated_at = NOW()
                     WHERE id = %s
+                    AND user_id = %s
                     """,
-                    (session_id,),
+                    (
+                        session_id,
+                        user_id,
+                    ),
                 )
 
             connection.commit()
@@ -141,6 +176,7 @@ class ChatRepository:
     def add_message(
         self,
         session_id: int,
+        user_id: int,
         role: str,
         content: str,
     ) -> int:
@@ -152,7 +188,9 @@ class ChatRepository:
         with psycopg.connect(
             settings.database_url
         ) as connection:
+
             with connection.cursor() as cursor:
+
                 cursor.execute(
                     """
                     INSERT INTO chat_messages (
@@ -160,25 +198,48 @@ class ChatRepository:
                         role,
                         content
                     )
-                    VALUES (%s, %s, %s)
+                    SELECT
+                        %s,
+                        %s,
+                        %s
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM chat_sessions
+                        WHERE id = %s
+                        AND user_id = %s
+                    )
                     RETURNING id
                     """,
                     (
                         session_id,
                         role,
                         content,
+                        session_id,
+                        user_id,
                     ),
                 )
 
-                message_id = cursor.fetchone()[0]
+                row = cursor.fetchone()
+
+                if row is None:
+                    connection.rollback()
+                    raise ValueError(
+                        "Session not found."
+                    )
+
+                message_id = row[0]
 
                 cursor.execute(
                     """
                     UPDATE chat_sessions
                     SET updated_at = NOW()
                     WHERE id = %s
+                    AND user_id = %s
                     """,
-                    (session_id,),
+                    (
+                        session_id,
+                        user_id,
+                    ),
                 )
 
             connection.commit()
@@ -188,24 +249,34 @@ class ChatRepository:
     def get_messages(
         self,
         session_id: int,
+        user_id: int,
     ):
         with psycopg.connect(
             settings.database_url
         ) as connection:
+
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
                     SELECT
-                        id,
-                        session_id,
-                        role,
-                        content,
-                        created_at
-                    FROM chat_messages
-                    WHERE session_id = %s
-                    ORDER BY created_at ASC, id ASC
+                        m.id,
+                        m.session_id,
+                        m.role,
+                        m.content,
+                        m.created_at
+                    FROM chat_messages m
+                    INNER JOIN chat_sessions s
+                        ON s.id = m.session_id
+                    WHERE m.session_id = %s
+                    AND s.user_id = %s
+                    ORDER BY
+                        m.created_at ASC,
+                        m.id ASC
                     """,
-                    (session_id,),
+                    (
+                        session_id,
+                        user_id,
+                    ),
                 )
 
                 return cursor.fetchall()
@@ -213,24 +284,32 @@ class ChatRepository:
     def get_recent_messages(
         self,
         session_id: int,
+        user_id: int,
         limit: int = 10,
     ):
         with psycopg.connect(
             settings.database_url
         ) as connection:
+
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
                     SELECT
-                        role,
-                        content
-                    FROM chat_messages
-                    WHERE session_id = %s
-                    ORDER BY created_at DESC, id DESC
+                        m.role,
+                        m.content
+                    FROM chat_messages m
+                    INNER JOIN chat_sessions s
+                        ON s.id = m.session_id
+                    WHERE m.session_id = %s
+                    AND s.user_id = %s
+                    ORDER BY
+                        m.created_at DESC,
+                        m.id DESC
                     LIMIT %s
                     """,
                     (
                         session_id,
+                        user_id,
                         limit,
                     ),
                 )
@@ -240,28 +319,3 @@ class ChatRepository:
         rows.reverse()
 
         return rows
-
-    def update_title(
-        self,
-        session_id: int,
-        title: str,
-    ) -> None:
-        with psycopg.connect(
-            settings.database_url
-        ) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    UPDATE chat_sessions
-                    SET
-                        title = %s,
-                        updated_at = NOW()
-                    WHERE id = %s
-                    """,
-                    (
-                        title,
-                        session_id,
-                    ),
-                )
-    
-            connection.commit()

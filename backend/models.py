@@ -15,8 +15,14 @@ class Document(BaseModel):
 
 class SearchRequest(BaseModel):
     query: str = Field(min_length=1)
-    limit: int = Field(default=5, ge=1, le=20)
-    document_ids: list[int] = Field(default_factory=list)
+    limit: int = Field(
+        default=5,
+        ge=1,
+        le=20,
+    )
+    document_ids: list[int] = Field(
+        default_factory=list
+    )
 
 
 class SearchResult(BaseModel):
@@ -29,8 +35,17 @@ class SearchResult(BaseModel):
 
 class AskRequest(BaseModel):
     question: str = Field(min_length=1)
-    limit: int = Field(default=5, ge=1, le=10)
-    document_ids: list[int] = Field(default_factory=list)
+
+    limit: int = Field(
+        default=5,
+        ge=1,
+        le=10,
+    )
+
+    document_ids: list[int] = Field(
+        default_factory=list
+    )
+
     session_id: int | None = None
 
 
@@ -47,6 +62,7 @@ class AskResponse(BaseModel):
     answer: str
     citations: list[Citation]
     session_id: int
+
 
 class ChatSession(BaseModel):
     id: int
@@ -84,3 +100,47 @@ class ChatMessageResponse(BaseModel):
     role: str
     content: str
     created_at: datetime
+
+
+class User(BaseModel):
+    id: int
+    email: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class RegisterRequest(BaseModel):
+    email: str = Field(
+        min_length=3,
+        max_length=320,
+    )
+
+    password: str = Field(
+        min_length=8,
+        max_length=128,
+    )
+
+
+class LoginRequest(BaseModel):
+    email: str = Field(
+        min_length=3,
+        max_length=320,
+    )
+
+    password: str = Field(
+        min_length=1,
+        max_length=128,
+    )
+
+
+class UserResponse(BaseModel):
+    id: int
+    email: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str
+    user: UserResponse

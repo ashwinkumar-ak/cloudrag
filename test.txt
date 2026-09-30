@@ -1,0 +1,4 @@
+CloudRAG ownership test document.
+
+CloudRAG stores documents for individual users.
+Each user's documents are isolated from other users.

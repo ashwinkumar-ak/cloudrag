@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
-
-const API_URL = "http://127.0.0.1:8000";
+import {
+  apiFetch,
+  API_URL,
+  clearToken,
+  getCurrentUser,
+  getStoredToken,
+  saveToken,
+  getHealth,
+} from "./api";
 
 function formatFileSize(bytes) {
   if (bytes < 1024) {
@@ -42,6 +49,15 @@ function formatDate(value) {
 }
 
 function App() {
+  const [token, setToken] = useState(() => getStoredToken());
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authMode, setAuthMode] = useState("login");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+
   const [sessions, setSessions] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
   const [sessionMessages, setSessionMessages] = useState([]);
@@ -80,24 +96,79 @@ function App() {
   const textareaRef = useRef(null);
   const messagesEndRef = useRef(null);
 
+  async function handleAuthSubmit(event) {
+    event.preventDefault();
+
+    const email = authEmail.trim().toLowerCase();
+    const password = authPassword;
+
+    if (!email || !password) {
+      setAuthError("Email and password are required.");
+      return;
+    }
+
+    setAuthSubmitting(true);
+    setAuthError("");
+
+    try {
+      const endpoint =
+        authMode === "login"
+          ? "/auth/login"
+          : "/auth/register";
+
+      const data = await apiFetch(endpoint, {
+        method: "POST",
+        body: JSON.stringify({
+          email,
+          password,
+        }),
+      });
+
+      saveToken(data.access_token);
+      setToken(data.access_token);
+      setUser(data.user);
+      setAuthPassword("");
+      setAuthError("");
+    } catch (error) {
+      setAuthError(
+        error.message ||
+          (authMode === "login"
+            ? "Login failed."
+            : "Registration failed.")
+      );
+    } finally {
+      setAuthSubmitting(false);
+    }
+  }
+
+  function logout() {
+    clearToken();
+    setToken(null);
+    setUser(null);
+    setSessions([]);
+    setCurrentSessionId(null);
+    setSessionMessages([]);
+    setDocuments([]);
+    setSelectedDocumentIds([]);
+    setSearchResults([]);
+    setQuestion("");
+    setAskError("");
+    setUploadStatus("");
+    setAuthError("");
+    setAuthPassword("");
+  }
+
   async function loadSessions(selectLatest = true) {
     try {
-      const response = await fetch(`${API_URL}/sessions`);
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data.detail || "Failed to load chat sessions."
-        );
-      }
-
+      const data = await apiFetch("/sessions");
+    
       setSessions(data);
-
+    
       if (data.length === 0) {
         await createSession();
         return;
       }
-
+    
       if (
         selectLatest &&
         (!currentSessionId ||
@@ -114,200 +185,162 @@ function App() {
     }
   }
 
-  async function createSession() {
-    if (creatingSession) {
-      return null;
-    }
-
-    setCreatingSession(true);
-
-    try {
-      const response = await fetch(`${API_URL}/sessions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          title: "New Chat",
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data.detail || "Failed to create chat session."
-        );
-      }
-
-      setSessions((current) => [
-        data,
-        ...current.filter((session) => session.id !== data.id),
-      ]);
-
-      setCurrentSessionId(data.id);
-      setSessionMessages([]);
-      setQuestion("");
-      setAskError("");
-
-      return data.id;
-    } catch (error) {
-      setAskError(error.message);
-      return null;
-    } finally {
-      setCreatingSession(false);
-    }
+async function createSession() {
+  if (creatingSession) {
+    return null;
   }
 
-  async function loadSession(sessionId) {
-    setCurrentSessionId(sessionId);
-    setLoadingMessages(true);
+  setCreatingSession(true);
+
+  try {
+    const data = await apiFetch("/sessions", {
+      method: "POST",
+      body: JSON.stringify({
+        title: "New Chat",
+      }),
+    });
+
+    setSessions((current) => [
+      data,
+      ...current.filter(
+        (session) => session.id !== data.id
+      ),
+    ]);
+
+    setCurrentSessionId(data.id);
+    setSessionMessages([]);
+    setQuestion("");
     setAskError("");
 
-    try {
-      const response = await fetch(
-        `${API_URL}/sessions/${sessionId}/messages`
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data.detail || "Failed to load conversation."
-        );
-      }
-
-      setSessionMessages(data);
-    } catch (error) {
-      setSessionMessages([]);
-      setAskError(error.message);
-    } finally {
-      setLoadingMessages(false);
-    }
+    return data.id;
+  } catch (error) {
+    setAskError(error.message);
+    return null;
+  } finally {
+    setCreatingSession(false);
   }
+}
 
-  async function deleteCurrentSession() {
-    if (!currentSessionId || deletingSession) {
-      return;
-    }
+async function loadSession(sessionId) {
+  setCurrentSessionId(sessionId);
+  setLoadingMessages(true);
+  setAskError("");
 
-    const confirmed = window.confirm(
-      "Delete this conversation?"
+  try {
+    const data = await apiFetch(
+      `/sessions/${sessionId}/messages`
     );
 
-    if (!confirmed) {
-      return;
-    }
+    setSessionMessages(data);
+  } catch (error) {
+    setSessionMessages([]);
+    setAskError(error.message);
+  } finally {
+    setLoadingMessages(false);
+  }
+}
 
-    setDeletingSession(true);
-
-    try {
-      const response = await fetch(
-        `${API_URL}/sessions/${currentSessionId}`,
-        {
-          method: "DELETE",
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data.detail || "Failed to delete conversation."
-        );
-      }
-
-      const remaining = sessions.filter(
-        (session) => session.id !== currentSessionId
-      );
-
-      setSessions(remaining);
-
-      if (remaining.length > 0) {
-        await loadSession(remaining[0].id);
-      } else {
-        await createSession();
-      }
-    } catch (error) {
-      setAskError(error.message);
-    } finally {
-      setDeletingSession(false);
-    }
+async function deleteCurrentSession() {
+  if (!currentSessionId || deletingSession) {
+    return;
   }
 
-  async function loadDocuments() {
-    setLoadingDocuments(true);
+  const confirmed = window.confirm(
+    "Delete this conversation?"
+  );
 
-    try {
-      const response = await fetch(`${API_URL}/documents`);
-      const data = await response.json();
+  if (!confirmed) {
+    return;
+  }
 
-      if (!response.ok) {
-        throw new Error(
-          data.detail || "Failed to load documents."
-        );
+  setDeletingSession(true);
+
+  try {
+    await apiFetch(
+      `/sessions/${currentSessionId}`,
+      {
+        method: "DELETE",
       }
+    );
 
-      setDocuments(data);
+    const remaining = sessions.filter(
+      (session) => session.id !== currentSessionId
+    );
 
-      setSelectedDocumentIds((current) =>
-        current.filter((id) =>
-          data.some((document) => document.id === id)
+    setSessions(remaining);
+
+    if (remaining.length > 0) {
+      await loadSession(remaining[0].id);
+    } else {
+      await createSession();
+    }
+  } catch (error) {
+    setAskError(error.message);
+  } finally {
+    setDeletingSession(false);
+  }
+}
+
+async function loadDocuments() {
+  setLoadingDocuments(true);
+
+  try {
+    const data = await apiFetch("/documents");
+
+    setDocuments(data);
+
+    setSelectedDocumentIds((current) =>
+      current.filter((id) =>
+        data.some(
+          (document) => document.id === id
         )
-      );
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoadingDocuments(false);
-    }
+      )
+    );
+  } catch (error) {
+    console.error(error);
+  } finally {
+    setLoadingDocuments(false);
+  }
+}
+
+async function uploadDocument() {
+  if (!file) {
+    setUploadStatus("Choose a document first.");
+    return;
   }
 
-  async function uploadDocument() {
-    if (!file) {
-      setUploadStatus("Choose a document first.");
-      return;
+  const formData = new FormData();
+  formData.append("file", file);
+
+  setUploading(true);
+  setUploadStatus("");
+
+  try {
+    const data = await apiFetch("/documents", {
+      method: "POST",
+      body: formData,
+    });
+
+    setUploadStatus(
+      `${data.filename} uploaded successfully.`
+    );
+
+    setFile(null);
+
+    const fileInput =
+      document.getElementById("document-upload");
+
+    if (fileInput) {
+      fileInput.value = "";
     }
 
-    const formData = new FormData();
-    formData.append("file", file);
-
-    setUploading(true);
-    setUploadStatus("");
-
-    try {
-      const response = await fetch(`${API_URL}/documents`, {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data.detail || "Upload failed."
-        );
-      }
-
-      setUploadStatus(
-        `${data.filename} uploaded successfully.`
-      );
-
-      setFile(null);
-
-      const fileInput =
-        document.getElementById("document-upload");
-
-      if (fileInput) {
-        fileInput.value = "";
-      }
-
-      await loadDocuments();
-    } catch (error) {
-      setUploadStatus(`Error: ${error.message}`);
-    } finally {
-      setUploading(false);
-    }
+    await loadDocuments();
+  } catch (error) {
+    setUploadStatus(`Error: ${error.message}`);
+  } finally {
+    setUploading(false);
   }
+}
 
   function toggleDocument(documentId) {
     setSelectedDocumentIds((current) => {
@@ -333,202 +366,157 @@ function App() {
     );
   }
 
-  async function deleteSelectedDocuments() {
-    if (
-      selectedDocumentIds.length === 0 ||
-      deletingDocuments
-    ) {
-      return;
-    }
-
-    const confirmed = window.confirm(
-      `Delete ${selectedDocumentIds.length} selected document(s)?`
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
-    setDeletingDocuments(true);
-
-    try {
-      for (const documentId of selectedDocumentIds) {
-        const response = await fetch(
-          `${API_URL}/documents/${documentId}`,
-          {
-            method: "DELETE",
-          }
-        );
-
-        if (!response.ok) {
-          const data = await response.json();
-
-          throw new Error(
-            data.detail || "Failed to delete document."
-          );
-        }
-      }
-
-      setSelectedDocumentIds([]);
-      await loadDocuments();
-    } catch (error) {
-      window.alert(`Delete failed: ${error.message}`);
-    } finally {
-      setDeletingDocuments(false);
-    }
+async function deleteSelectedDocuments() {
+  if (
+    selectedDocumentIds.length === 0 ||
+    deletingDocuments
+  ) {
+    return;
   }
 
-  async function searchDocuments() {
-    if (!query.trim()) {
-      return;
-    }
+  const confirmed = window.confirm(
+    `Delete ${selectedDocumentIds.length} selected document(s)?`
+  );
 
-    setSearching(true);
-    setSearchError("");
-
-    try {
-      const response = await fetch(`${API_URL}/search`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          query,
-          limit: 5,
-          document_ids: selectedDocumentIds,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data.detail || "Search failed."
-        );
-      }
-
-      setSearchResults(data);
-    } catch (error) {
-      setSearchResults([]);
-      setSearchError(error.message);
-    } finally {
-      setSearching(false);
-    }
+  if (!confirmed) {
+    return;
   }
 
-  async function loadHealth() {
-    try {
-      const response = await fetch(`${API_URL}/health`);
-      const data = await response.json();
+  setDeletingDocuments(true);
 
-      if (!response.ok) {
-        throw new Error("Health check failed.");
-      }
-
-      setHealth(data);
-    } catch {
-      setHealth({
-        status: "degraded",
-        dependencies: {
-          database: "unavailable",
-          ollama: "unavailable",
-        },
+  try {
+    for (const documentId of selectedDocumentIds) {
+      await apiFetch(`/documents/${documentId}`, {
+        method: "DELETE",
       });
     }
+
+    setSelectedDocumentIds([]);
+    await loadDocuments();
+  } catch (error) {
+    window.alert(`Delete failed: ${error.message}`);
+  } finally {
+    setDeletingDocuments(false);
+  }
+}
+
+async function searchDocuments() {
+  if (!query.trim()) {
+    return;
   }
 
-  async function askQuestion() {
-    const trimmedQuestion = question.trim();
+  setSearching(true);
+  setSearchError("");
 
-    if (!trimmedQuestion || asking) {
-      return;
-    }
+  try {
+    const data = await apiFetch("/search", {
+      method: "POST",
+      body: JSON.stringify({
+        query,
+        limit: 5,
+        document_ids: selectedDocumentIds,
+      }),
+    });
 
-    let sessionId = currentSessionId;
+    setSearchResults(data);
+  } catch (error) {
+    setSearchResults([]);
+    setSearchError(error.message);
+  } finally {
+    setSearching(false);
+  }
+}
+async function loadHealth() {
+  try {
+    const data = await getHealth();
+    setHealth(data);
+  } catch {
+    setHealth({
+      status: "degraded",
+      dependencies: {
+        database: "unavailable",
+        ollama: "unavailable",
+      },
+    });
+  }
+}
+
+async function askQuestion() {
+  const trimmedQuestion = question.trim();
+
+  if (!trimmedQuestion || asking) {
+    return;
+  }
+
+  let sessionId = currentSessionId;
+
+  if (!sessionId) {
+    sessionId = await createSession();
 
     if (!sessionId) {
-      sessionId = await createSession();
-
-      if (!sessionId) {
-        return;
-      }
-    }
-
-    const temporaryUserMessage = {
-      id: `temp-user-${Date.now()}`,
-      role: "user",
-      content: trimmedQuestion,
-      created_at: new Date().toISOString(),
-      temporary: true,
-    };
-
-    setSessionMessages((current) => [
-      ...current,
-      temporaryUserMessage,
-    ]);
-
-    setQuestion("");
-    setAskError("");
-    setAsking(true);
-
-    try {
-      const response = await fetch(`${API_URL}/ask`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          question: trimmedQuestion,
-          limit: 3,
-          document_ids: selectedDocumentIds,
-          session_id: sessionId,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data.detail || "Question failed."
-        );
-      }
-
-      setCurrentSessionId(data.session_id);
-
-      await loadSession(data.session_id);
-
-      await refreshSessionList(data.session_id);
-    } catch (error) {
-      setSessionMessages((current) =>
-        current.filter(
-          (message) =>
-            message.id !== temporaryUserMessage.id
-        )
-      );
-
-      setAskError(error.message);
-    } finally {
-      setAsking(false);
+      return;
     }
   }
 
-  async function refreshSessionList(activeSessionId) {
-    try {
-      const response = await fetch(`${API_URL}/sessions`);
-      const data = await response.json();
+  const temporaryUserMessage = {
+    id: `temp-user-${Date.now()}`,
+    role: "user",
+    content: trimmedQuestion,
+    created_at: new Date().toISOString(),
+    temporary: true,
+  };
 
-      if (response.ok) {
-        setSessions(data);
+  setSessionMessages((current) => [
+    ...current,
+    temporaryUserMessage,
+  ]);
 
-        if (activeSessionId) {
-          setCurrentSessionId(activeSessionId);
-        }
-      }
-    } catch (error) {
-      console.error(error);
-    }
+  setQuestion("");
+  setAskError("");
+  setAsking(true);
+
+  try {
+    const data = await apiFetch("/ask", {
+      method: "POST",
+      body: JSON.stringify({
+        question: trimmedQuestion,
+        limit: 3,
+        document_ids: selectedDocumentIds,
+        session_id: sessionId,
+      }),
+    });
+
+    setCurrentSessionId(data.session_id);
+
+    await loadSession(data.session_id);
+    await refreshSessionList(data.session_id);
+  } catch (error) {
+    setSessionMessages((current) =>
+      current.filter(
+        (message) =>
+          message.id !== temporaryUserMessage.id
+      )
+    );
+
+    setAskError(error.message);
+  } finally {
+    setAsking(false);
   }
+}
 
+ async function refreshSessionList(activeSessionId) {
+  try {
+    const data = await apiFetch("/sessions");
+
+    setSessions(data);
+
+    if (activeSessionId) {
+      setCurrentSessionId(activeSessionId);
+    }
+  } catch (error) {
+    console.error(error);
+  }
+}
   function handleComposerKeyDown(event) {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
@@ -549,6 +537,63 @@ function App() {
   }
 
   useEffect(() => {
+    function handleUnauthorized() {
+      logout();
+    }
+
+    window.addEventListener("cloudrag:unauthorized", handleUnauthorized);
+    return () => {
+      window.removeEventListener(
+        "cloudrag:unauthorized",
+        handleUnauthorized
+      );
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function validateAuthentication() {
+      if (!token) {
+        if (!cancelled) {
+          setUser(null);
+          setAuthLoading(false);
+        }
+        return;
+      }
+
+      setAuthLoading(true);
+
+      try {
+        const currentUser = await getCurrentUser();
+        if (!cancelled) {
+          setUser(currentUser);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          clearToken();
+          setToken(null);
+          setUser(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setAuthLoading(false);
+        }
+      }
+    }
+
+    validateAuthentication();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  useEffect(() => {
+    if (!user) {
+      return undefined;
+    }
+
     loadSessions();
     loadDocuments();
     loadHealth();
@@ -556,7 +601,7 @@ function App() {
     const interval = setInterval(loadHealth, 30000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [user]);
 
 
   useEffect(() => {
@@ -594,6 +639,235 @@ function App() {
     selectedDocumentIds.length === documents.length;
 
   const systemHealthy = health?.status === "ok";
+
+  if (authLoading) {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          background: "#f7f8fa",
+          color: "#1f2937",
+          fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+        }}
+      >
+        <div style={{ textAlign: "center" }}>
+          <div
+            style={{
+              width: 56,
+              height: 56,
+              borderRadius: 16,
+              display: "grid",
+              placeItems: "center",
+              margin: "0 auto 16px",
+              background: "#111827",
+              color: "white",
+              fontSize: 24,
+              fontWeight: 700,
+            }}
+          >
+            C
+          </div>
+          <strong style={{ fontSize: 18 }}>CloudRAG</strong>
+          <div style={{ marginTop: 8, color: "#6b7280" }}>Loading...</div>
+        </div>
+      </main>
+    );
+  }
+
+  if (!user) {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          padding: 24,
+          background: "#f7f8fa",
+          color: "#1f2937",
+          fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+        }}
+      >
+        <section
+          style={{
+            width: "min(420px, 100%)",
+            background: "white",
+            border: "1px solid #e5e7eb",
+            borderRadius: 20,
+            padding: 32,
+            boxShadow: "0 18px 50px rgba(15, 23, 42, 0.08)",
+          }}
+        >
+          <div style={{ textAlign: "center", marginBottom: 28 }}>
+            <div
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: 16,
+                display: "grid",
+                placeItems: "center",
+                margin: "0 auto 14px",
+                background: "#111827",
+                color: "white",
+                fontSize: 24,
+                fontWeight: 700,
+              }}
+            >
+              C
+            </div>
+            <h1 style={{ margin: 0, fontSize: 26 }}>CloudRAG</h1>
+            <p style={{ margin: "8px 0 0", color: "#6b7280" }}>
+              Document Intelligence
+            </p>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 8,
+              padding: 4,
+              background: "#f3f4f6",
+              borderRadius: 10,
+              marginBottom: 22,
+            }}
+          >
+            {[["login", "Sign in"], ["register", "Create account"]].map(
+              ([mode, label]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => {
+                    setAuthMode(mode);
+                    setAuthError("");
+                  }}
+                  style={{
+                    border: 0,
+                    borderRadius: 8,
+                    padding: "10px 8px",
+                    background: authMode === mode ? "white" : "transparent",
+                    color: authMode === mode ? "#111827" : "#6b7280",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    boxShadow:
+                      authMode === mode
+                        ? "0 1px 3px rgba(0,0,0,.08)"
+                        : "none",
+                  }}
+                >
+                  {label}
+                </button>
+              )
+            )}
+          </div>
+
+          <form onSubmit={handleAuthSubmit}>
+            <label style={{ display: "block", marginBottom: 16 }}>
+              <span
+                style={{
+                  display: "block",
+                  marginBottom: 7,
+                  fontSize: 13,
+                  fontWeight: 600,
+                }}
+              >
+                Email
+              </span>
+              <input
+                type="email"
+                value={authEmail}
+                onChange={(event) => setAuthEmail(event.target.value)}
+                autoComplete="email"
+                placeholder="you@example.com"
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  border: "1px solid #d1d5db",
+                  borderRadius: 10,
+                  padding: "12px 13px",
+                  fontSize: 14,
+                  outline: "none",
+                }}
+                required
+              />
+            </label>
+
+            <label style={{ display: "block", marginBottom: 16 }}>
+              <span
+                style={{
+                  display: "block",
+                  marginBottom: 7,
+                  fontSize: 13,
+                  fontWeight: 600,
+                }}
+              >
+                Password
+              </span>
+              <input
+                type="password"
+                value={authPassword}
+                onChange={(event) => setAuthPassword(event.target.value)}
+                autoComplete={authMode === "login" ? "current-password" : "new-password"}
+                placeholder="At least 8 characters"
+                minLength={authMode === "register" ? 8 : 1}
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  border: "1px solid #d1d5db",
+                  borderRadius: 10,
+                  padding: "12px 13px",
+                  fontSize: 14,
+                  outline: "none",
+                }}
+                required
+              />
+            </label>
+
+            {authError && (
+              <div
+                style={{
+                  marginBottom: 16,
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  background: "#fef2f2",
+                  border: "1px solid #fecaca",
+                  color: "#b91c1c",
+                  fontSize: 13,
+                }}
+              >
+                {authError}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={authSubmitting}
+              style={{
+                width: "100%",
+                border: 0,
+                borderRadius: 10,
+                padding: "13px 16px",
+                background: "#111827",
+                color: "white",
+                fontWeight: 700,
+                cursor: authSubmitting ? "wait" : "pointer",
+                opacity: authSubmitting ? 0.7 : 1,
+              }}
+            >
+              {authSubmitting
+                ? authMode === "login"
+                  ? "Signing in..."
+                  : "Creating account..."
+                : authMode === "login"
+                  ? "Sign in"
+                  : "Create account"}
+            </button>
+          </form>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main
@@ -749,6 +1023,37 @@ function App() {
           </div>
 
           <div className="chat-header-actions">
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginRight: 4,
+              }}
+            >
+              <span
+                title={user.email}
+                style={{
+                  maxWidth: 220,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  fontSize: 13,
+                  color: "inherit",
+                }}
+              >
+                {user.email}
+              </span>
+              <button
+                type="button"
+                className="icon-button"
+                title="Sign out"
+                onClick={logout}
+              >
+                ↪
+              </button>
+            </div>
+
             <div
               className={`header-health ${
                 systemHealthy ? "healthy" : "degraded"

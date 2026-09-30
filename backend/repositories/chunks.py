@@ -48,6 +48,7 @@ class ChunkRepository:
     def search_chunks(
         self,
         embedding: list[float],
+        user_id: int,
         limit: int = 10,
         distance_threshold: float | None = None,
         document_ids: list[int] | None = None,
@@ -61,20 +62,24 @@ class ChunkRepository:
                     cursor.execute(
                         """
                         SELECT
-                            id,
-                            document_id,
-                            chunk_index,
-                            content,
-                            embedding <=> %s::vector AS distance
-                        FROM chunks
-                        WHERE embedding IS NOT NULL
-                          AND document_id = ANY(%s)
-                          AND embedding <=> %s::vector <= %s
-                        ORDER BY embedding <=> %s::vector
+                            c.id,
+                            c.document_id,
+                            c.chunk_index,
+                            c.content,
+                            c.embedding <=> %s::vector AS distance
+                        FROM chunks c
+                        INNER JOIN documents d
+                            ON d.id = c.document_id
+                        WHERE c.embedding IS NOT NULL
+                          AND d.user_id = %s
+                          AND c.document_id = ANY(%s)
+                          AND c.embedding <=> %s::vector <= %s
+                        ORDER BY c.embedding <=> %s::vector
                         LIMIT %s
                         """,
                         (
                             embedding,
+                            user_id,
                             document_ids,
                             embedding,
                             distance_threshold,
@@ -86,19 +91,23 @@ class ChunkRepository:
                     cursor.execute(
                         """
                         SELECT
-                            id,
-                            document_id,
-                            chunk_index,
-                            content,
-                            embedding <=> %s::vector AS distance
-                        FROM chunks
-                        WHERE embedding IS NOT NULL
-                          AND embedding <=> %s::vector <= %s
-                        ORDER BY embedding <=> %s::vector
+                            c.id,
+                            c.document_id,
+                            c.chunk_index,
+                            c.content,
+                            c.embedding <=> %s::vector AS distance
+                        FROM chunks c
+                        INNER JOIN documents d
+                            ON d.id = c.document_id
+                        WHERE c.embedding IS NOT NULL
+                          AND d.user_id = %s
+                          AND c.embedding <=> %s::vector <= %s
+                        ORDER BY c.embedding <=> %s::vector
                         LIMIT %s
                         """,
                         (
                             embedding,
+                            user_id,
                             embedding,
                             distance_threshold,
                             embedding,
@@ -111,6 +120,7 @@ class ChunkRepository:
     def keyword_search_chunks(
         self,
         query: str,
+        user_id: int,
         limit: int = 10,
         document_ids: list[int] | None = None,
     ):
@@ -124,7 +134,7 @@ class ChunkRepository:
 
         for keyword in keywords:
             conditions.append(
-                "LOWER(content) LIKE %s"
+                "LOWER(c.content) LIKE %s"
             )
             parameters.append(f"%{keyword}%")
 
@@ -132,26 +142,30 @@ class ChunkRepository:
 
         if document_ids:
             document_filter = """
-                AND document_id = ANY(%s)
+                AND c.document_id = ANY(%s)
             """
             parameters.append(document_ids)
 
         sql = f"""
             SELECT
-                id,
-                document_id,
-                chunk_index,
-                content,
+                c.id,
+                c.document_id,
+                c.chunk_index,
+                c.content,
                 0.0::double precision AS distance
-            FROM chunks
-            WHERE (
+            FROM chunks c
+            INNER JOIN documents d
+                ON d.id = c.document_id
+            WHERE d.user_id = %s
+              AND (
                 {" OR ".join(conditions)}
-            )
+              )
             {document_filter}
-            ORDER BY id
+            ORDER BY c.id
             LIMIT %s
         """
 
+        parameters.insert(0, user_id)
         parameters.append(limit)
 
         with psycopg.connect(settings.database_url) as connection:
@@ -167,6 +181,7 @@ class ChunkRepository:
         self,
         embedding: list[float],
         query: str,
+        user_id: int,
         limit: int = 5,
         distance_threshold: float | None = None,
         document_ids: list[int] | None = None,
@@ -183,6 +198,7 @@ class ChunkRepository:
 
         semantic_rows = self.search_chunks(
             embedding=embedding,
+            user_id=user_id,
             limit=max(limit * 3, 10),
             distance_threshold=distance_threshold,
             document_ids=document_ids,
@@ -190,6 +206,7 @@ class ChunkRepository:
 
         keyword_rows = self.keyword_search_chunks(
             query=query,
+            user_id=user_id,
             limit=max(limit * 3, 10),
             document_ids=document_ids,
         )
@@ -232,19 +249,11 @@ class ChunkRepository:
             semantic_distance = candidate["semantic_distance"]
             keyword_score = candidate["keyword_score"]
 
-            # Convert cosine distance into a similarity score.
             semantic_score = max(
                 0.0,
                 1.0 - semantic_distance,
             )
 
-            # Hybrid score:
-            #
-            # 65% semantic relevance
-            # 35% lexical relevance
-            #
-            # Exact technical terms therefore influence
-            # ranking without completely overriding semantics.
             hybrid_score = (
                 semantic_score * 0.65
                 + keyword_score * 0.35
@@ -271,7 +280,6 @@ class ChunkRepository:
     def _extract_keywords(query: str) -> list[str]:
         query = query.lower()
 
-        # Fix common typo from natural user input.
         replacements = {
             "scarping": "scraping",
             "scrappng": "scraping",

@@ -1,10 +1,23 @@
 import time
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    HTTPException,
+    UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi import Response
 from prometheus_client import CONTENT_TYPE_LATEST
 
+from backend.auth import (
+    create_access_token,
+    hash_password,
+    require_bearer_token,
+    verify_password,
+)
 from backend.config import settings
 from backend.document_parser import (
     DocumentParseError,
@@ -24,19 +37,22 @@ from backend.metrics import (
 from backend.models import (
     AskRequest,
     AskResponse,
-    Citation,
     ChatMessageResponse,
     CreateSessionRequest,
     Document,
+    LoginRequest,
+    LoginResponse,
+    RegisterRequest,
     SearchRequest,
     SearchResult,
     SessionResponse,
+    UserResponse,
 )
 from backend.rag import RAGService
 from backend.repositories.chunks import ChunkRepository
 from backend.repositories.documents import DocumentRepository
-
 from backend.repositories.chat import ChatRepository
+from backend.repositories.users import UserRepository
 
 
 embedding_service = EmbeddingService()
@@ -45,6 +61,11 @@ document_repository = DocumentRepository()
 ingestion_service = IngestionService()
 rag_service = RAGService()
 chat_repository = ChatRepository()
+user_repository = UserRepository()
+
+bearer_scheme = HTTPBearer(
+    auto_error=False,
+)
 
 
 app = FastAPI(
@@ -77,6 +98,27 @@ app.add_middleware(
 )
 
 
+def get_current_user_id(
+    credentials: HTTPAuthorizationCredentials | None = Depends(
+        bearer_scheme
+    ),
+) -> int:
+    return require_bearer_token(
+        credentials=credentials,
+        secret_key=settings.jwt_secret_key,
+        algorithm=settings.jwt_algorithm,
+    )
+
+
+def get_user_response(user_row) -> UserResponse:
+    return UserResponse(
+        id=user_row[0],
+        email=user_row[1],
+        created_at=user_row[3],
+        updated_at=user_row[4],
+    )
+
+
 @app.get("/health")
 def health_check():
     return {
@@ -102,9 +144,152 @@ def readiness_check():
     return {"status": "ready"}
 
 
-@app.get("/documents", response_model=list[Document])
-def list_documents():
-    rows = document_repository.list_documents()
+# ---------------------------------------------------------------------------
+# Authentication
+# ---------------------------------------------------------------------------
+
+
+@app.post(
+    "/auth/register",
+    response_model=LoginResponse,
+    status_code=201,
+)
+def register(request: RegisterRequest):
+    email = request.email.strip().lower()
+
+    if not email:
+        raise HTTPException(
+            status_code=400,
+            detail="Email is required.",
+        )
+
+    existing_user = user_repository.get_by_email(email)
+
+    if existing_user:
+        raise HTTPException(
+            status_code=409,
+            detail="An account with this email already exists.",
+        )
+
+    try:
+        password_hash = hash_password(request.password)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    try:
+        user_id = user_repository.create_user(
+            email=email,
+            password_hash=password_hash,
+        )
+    except Exception as exc:
+        # Handles a possible race against the UNIQUE email constraint.
+        if user_repository.get_by_email(email):
+            raise HTTPException(
+                status_code=409,
+                detail="An account with this email already exists.",
+            ) from exc
+
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to create account.",
+        ) from exc
+
+    user = user_repository.get_by_id(user_id)
+
+    if not user:
+        raise HTTPException(
+            status_code=500,
+            detail="Account was created but could not be loaded.",
+        )
+
+    access_token = create_access_token(
+        user_id=user_id,
+        secret_key=settings.jwt_secret_key,
+        algorithm=settings.jwt_algorithm,
+        expires_minutes=settings.jwt_access_token_expire_minutes,
+    )
+
+    return LoginResponse(
+        access_token=access_token,
+        token_type="bearer",
+        user=get_user_response(user),
+    )
+
+
+@app.post(
+    "/auth/login",
+    response_model=LoginResponse,
+)
+def login(request: LoginRequest):
+    email = request.email.strip().lower()
+
+    user = user_repository.get_by_email(email)
+
+    if not user or not verify_password(
+        request.password,
+        user[2],
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid email or password.",
+            headers={
+                "WWW-Authenticate": "Bearer",
+            },
+        )
+
+    access_token = create_access_token(
+        user_id=user[0],
+        secret_key=settings.jwt_secret_key,
+        algorithm=settings.jwt_algorithm,
+        expires_minutes=settings.jwt_access_token_expire_minutes,
+    )
+
+    return LoginResponse(
+        access_token=access_token,
+        token_type="bearer",
+        user=get_user_response(user),
+    )
+
+
+@app.get(
+    "/auth/me",
+    response_model=UserResponse,
+)
+def get_current_user(
+    user_id: int = Depends(get_current_user_id),
+):
+    user = user_repository.get_by_id(user_id)
+
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="User account no longer exists.",
+            headers={
+                "WWW-Authenticate": "Bearer",
+            },
+        )
+
+    return get_user_response(user)
+
+
+# ---------------------------------------------------------------------------
+# Documents
+# ---------------------------------------------------------------------------
+
+
+@app.get(
+    "/documents",
+    response_model=list[Document],
+)
+def list_documents(
+    user_id: int = Depends(get_current_user_id),
+):
+    rows = document_repository.list_documents(
+        user_id=user_id,
+    )
 
     return [
         Document(
@@ -120,9 +305,18 @@ def list_documents():
     ]
 
 
-@app.get("/documents/{document_id}", response_model=Document)
-def get_document(document_id: int):
-    row = document_repository.get_document(document_id)
+@app.get(
+    "/documents/{document_id}",
+    response_model=Document,
+)
+def get_document(
+    document_id: int,
+    user_id: int = Depends(get_current_user_id),
+):
+    row = document_repository.get_document(
+        document_id=document_id,
+        user_id=user_id,
+    )
 
     if not row:
         raise HTTPException(
@@ -141,10 +335,16 @@ def get_document(document_id: int):
     )
 
 
-@app.delete("/documents/{document_id}")
-def delete_document(document_id: int):
+@app.delete(
+    "/documents/{document_id}",
+)
+def delete_document(
+    document_id: int,
+    user_id: int = Depends(get_current_user_id),
+):
     deleted = document_repository.delete_document(
-        document_id
+        document_id=document_id,
+        user_id=user_id,
     )
 
     if not deleted:
@@ -159,33 +359,12 @@ def delete_document(document_id: int):
     }
 
 
-@app.post("/search", response_model=list[SearchResult])
-def search(request: SearchRequest):
-    query_embedding = embedding_service.embed(
-        request.query
-    )
-
-    rows = chunk_repository.search_chunks(
-        embedding=query_embedding,
-        limit=request.limit,
-        document_ids=request.document_ids or None,
-    )
-
-    return [
-        SearchResult(
-            chunk_id=row[0],
-            document_id=row[1],
-            chunk_index=row[2],
-            content=row[3],
-            distance=float(row[4]),
-        )
-        for row in rows
-    ]
-
-
-@app.post("/documents")
+@app.post(
+    "/documents",
+)
 async def upload_document(
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    user_id: int = Depends(get_current_user_id),
 ):
     if not file.filename:
         raise HTTPException(
@@ -222,6 +401,7 @@ async def upload_document(
 
     try:
         document_id = ingestion_service.ingest_text(
+            user_id=user_id,
             filename=file.filename,
             content_type=(
                 file.content_type
@@ -242,29 +422,112 @@ async def upload_document(
     }
 
 
-@app.post("/ask", response_model=AskResponse)
-def ask(request: AskRequest):
+# ---------------------------------------------------------------------------
+# Search
+# ---------------------------------------------------------------------------
+
+
+@app.post(
+    "/search",
+    response_model=list[SearchResult],
+)
+def search(
+    request: SearchRequest,
+    user_id: int = Depends(get_current_user_id),
+):
+    document_ids = request.document_ids or None
+
+    if document_ids:
+        owned_document_ids = []
+
+        for document_id in document_ids:
+            document = document_repository.get_document(
+                document_id=document_id,
+                user_id=user_id,
+            )
+
+            if document:
+                owned_document_ids.append(document_id)
+
+        if not owned_document_ids:
+            return []
+
+        document_ids = owned_document_ids
+
+    query_embedding = embedding_service.embed(
+        request.query
+    )
+
+    rows = chunk_repository.search_chunks(
+        embedding=query_embedding,
+        user_id=user_id,
+        limit=request.limit,
+        document_ids=document_ids,
+    )
+
+    return [
+        SearchResult(
+            chunk_id=row[0],
+            document_id=row[1],
+            chunk_index=row[2],
+            content=row[3],
+            distance=float(row[4]),
+        )
+        for row in rows
+    ]
+
+
+# ---------------------------------------------------------------------------
+# RAG
+# ---------------------------------------------------------------------------
+
+
+@app.post(
+    "/ask",
+    response_model=AskResponse,
+)
+def ask(
+    request: AskRequest,
+    user_id: int = Depends(get_current_user_id),
+):
     start = time.perf_counter()
 
     RAG_REQUEST_COUNT.inc()
 
     try:
+        session_id = request.session_id
+
+        if session_id is not None:
+            existing_session = chat_repository.get_session(
+                session_id=session_id,
+                user_id=user_id,
+            )
+
+            if not existing_session:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Session not found",
+                )
+
         answer, context = rag_service.answer(
             question=request.question,
+            user_id=user_id,
             limit=request.limit,
             document_ids=request.document_ids or None,
-            session_id=request.session_id,
+            session_id=session_id,
         )
 
-        if request.session_id is None:
+        if session_id is None:
             session_id = chat_repository.create_session(
-                title=request.question[:60]
+                user_id=user_id,
+                title=generate_session_title(
+                    request.question
+                ),
             )
-        else:
-            session_id = request.session_id
 
         session = chat_repository.get_session(
-            session_id
+            session_id=session_id,
+            user_id=user_id,
         )
 
         if not session:
@@ -276,17 +539,22 @@ def ask(request: AskRequest):
         if session[1] == "New Chat":
             chat_repository.update_title(
                 session_id=session_id,
-                title=generate_session_title(request.question),
+                user_id=user_id,
+                title=generate_session_title(
+                    request.question
+                ),
             )
 
         chat_repository.add_message(
             session_id=session_id,
+            user_id=user_id,
             role="user",
             content=request.question,
         )
 
         chat_repository.add_message(
             session_id=session_id,
+            user_id=user_id,
             role="assistant",
             content=answer,
         )
@@ -305,16 +573,13 @@ def ask(request: AskRequest):
 
     finally:
         duration = time.perf_counter() - start
-
         RAG_REQUEST_LATENCY.observe(duration)
 
 
-@app.get("/metrics")
-def metrics():
-    return Response(
-        content=get_metrics(),
-        media_type=CONTENT_TYPE_LATEST,
-    )
+# ---------------------------------------------------------------------------
+# Chat sessions
+# ---------------------------------------------------------------------------
+
 
 @app.post(
     "/sessions",
@@ -322,14 +587,16 @@ def metrics():
 )
 def create_session(
     request: CreateSessionRequest,
+    user_id: int = Depends(get_current_user_id),
 ):
     session_id = chat_repository.create_session(
-        title=request.title.strip()
-        or "New Chat"
+        user_id=user_id,
+        title=request.title.strip() or "New Chat",
     )
 
     session = chat_repository.get_session(
-        session_id
+        session_id=session_id,
+        user_id=user_id,
     )
 
     return SessionResponse(
@@ -339,12 +606,17 @@ def create_session(
         updated_at=session[3],
     )
 
+
 @app.get(
     "/sessions",
     response_model=list[SessionResponse],
 )
-def list_sessions():
-    rows = chat_repository.list_sessions()
+def list_sessions(
+    user_id: int = Depends(get_current_user_id),
+):
+    rows = chat_repository.list_sessions(
+        user_id=user_id,
+    )
 
     return [
         SessionResponse(
@@ -356,15 +628,18 @@ def list_sessions():
         for row in rows
     ]
 
+
 @app.get(
     "/sessions/{session_id}/messages",
     response_model=list[ChatMessageResponse],
 )
 def get_session_messages(
     session_id: int,
+    user_id: int = Depends(get_current_user_id),
 ):
     session = chat_repository.get_session(
-        session_id
+        session_id=session_id,
+        user_id=user_id,
     )
 
     if not session:
@@ -374,7 +649,8 @@ def get_session_messages(
         )
 
     rows = chat_repository.get_messages(
-        session_id
+        session_id=session_id,
+        user_id=user_id,
     )
 
     return [
@@ -388,14 +664,17 @@ def get_session_messages(
         for row in rows
     ]
 
+
 @app.delete(
     "/sessions/{session_id}",
 )
 def delete_session(
     session_id: int,
+    user_id: int = Depends(get_current_user_id),
 ):
     deleted = chat_repository.delete_session(
-        session_id
+        session_id=session_id,
+        user_id=user_id,
     )
 
     if not deleted:
@@ -408,6 +687,25 @@ def delete_session(
         "session_id": session_id,
         "deleted": True,
     }
+
+
+# ---------------------------------------------------------------------------
+# Metrics
+# ---------------------------------------------------------------------------
+
+
+@app.get("/metrics")
+def metrics():
+    return Response(
+        content=get_metrics(),
+        media_type=CONTENT_TYPE_LATEST,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
 
 def generate_session_title(question: str) -> str:
     title = " ".join(question.strip().split())
