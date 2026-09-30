@@ -28,6 +28,7 @@ from backend.metrics import (
 )
 
 from backend.rag import RAGService
+from backend.llm import LLMGenerationError
 
 embedding_service = EmbeddingService()
 chunk_repository = ChunkRepository()
@@ -180,6 +181,13 @@ def ask(request: AskRequest):
             answer=answer,
             citations=context,
         )
+
+    except LLMGenerationError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        ) from exc
+
     finally:
         duration = time.perf_counter() - start
         RAG_REQUEST_LATENCY.observe(duration)

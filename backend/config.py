@@ -4,7 +4,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_name: str = "cloudrag-api"
     environment: str = "development"
-    database_url: str = "postgresql://cloudrag:cloudrag-dev-password@localhost:5432/cloudrag"
+    database_url: str = (
+        "postgresql://cloudrag:cloudrag-dev-password@localhost:5432/cloudrag"
+    )
+    retrieval_distance_threshold: float = 0.20
 
     model_config = SettingsConfigDict(
         env_file=".env",

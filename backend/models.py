@@ -36,6 +36,7 @@ class Citation(BaseModel):
     filename: str
     chunk_index: int
     content: str
+    distance: float
 
 
 class AskResponse(BaseModel):

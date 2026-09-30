@@ -2,7 +2,11 @@ FROM python:3.14-slim
 
 WORKDIR /app
 
-COPY pyproject.toml .
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+COPY pyproject.toml ./
+
 COPY backend ./backend
 
 RUN pip install --no-cache-dir .

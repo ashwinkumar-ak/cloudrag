@@ -37,7 +37,12 @@ class ChunkRepository:
         self,
         embedding: list[float],
         limit: int = 5,
-    ):
+        distance_threshold: float | None = None,
+        ):
+        
+        if distance_threshold is None:
+            distance_threshold = settings.retrieval_distance_threshold
+
         with psycopg.connect(settings.database_url) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -50,10 +55,17 @@ class ChunkRepository:
                         embedding <=> %s::vector AS distance
                     FROM chunks
                     WHERE embedding IS NOT NULL
+                      AND embedding <=> %s::vector <= %s
                     ORDER BY embedding <=> %s::vector
-                    LIMIT %s;
+                    LIMIT %s
                     """,
-                    (embedding, embedding, limit),
+                    (
+                        embedding,
+                        embedding,
+                        distance_threshold,
+                        embedding,
+                        limit,
+                    ),
                 )
-    
+
                 return cursor.fetchall()

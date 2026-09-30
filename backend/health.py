@@ -1,16 +1,25 @@
+import os
 import requests
 
 from backend.database import check_database_connection
 
+
 def check_ollama_connection() -> bool:
+    base_url = os.getenv(
+        "OLLAMA_BASE_URL",
+        "http://localhost:11434",
+    )
+
     try:
         response = requests.get(
-            "http://localhost:11434/api/tags",
+            f"{base_url}/api/tags",
             timeout=3,
         )
         return response.ok
+
     except requests.RequestException:
         return False
+
 
 def get_health_status():
     database_healthy = check_database_connection()
