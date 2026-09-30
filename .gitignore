@@ -4,3 +4,8 @@ __pycache__/
 .env
 .env.*
 !.env.example
+test-document.txt
+test-pdf-document.pdf
+test-word-document.docx
+test.txt
+cloudrag-monitoring-test.txt
