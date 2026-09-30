@@ -69,11 +69,26 @@ class LLMService:
                 response.raise_for_status()
 
             except requests.RequestException as exc:
+                if isinstance(exc, requests.HTTPError) and exc.response is not None:
+                    status_code = exc.response.status_code
+                    try:
+                        error_data = exc.response.json()
+                        error_message = (
+                            error_data.get("error", {}).get("message")
+                            or "Unknown Gemini API error."
+                        )
+                    except ValueError:
+                        error_message = "Unknown Gemini API error."
+            
+                    raise LLMGenerationError(
+                        f"Gemini API error ({status_code}): "
+                        f"{error_message}"
+                    ) from exc
+            
                 raise LLMGenerationError(
                     "The cloud language model could not "
                     "generate a response."
                 ) from exc
-
             try:
                 data = response.json()
             except ValueError as exc:
