@@ -1581,6 +1581,7 @@ async function askQuestion() {
                   Connected
                 </strong>
               </div>
+              </div>
 
             <div className="health-note">
               Health status automatically refreshes every
