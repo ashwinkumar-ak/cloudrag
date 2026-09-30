@@ -1,7 +1,6 @@
 import psycopg
 
 from backend.config import settings
-from backend.models import Document
 
 
 class DocumentRepository:
@@ -18,12 +17,18 @@ class DocumentRepository:
                     INSERT INTO documents (
                         filename,
                         content_type,
-                        file_size
+                        file_size,
+                        status
                     )
-                    VALUES (%s, %s, %s)
-                    RETURNING id;
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING id
                     """,
-                    (filename, content_type, file_size),
+                    (
+                        filename,
+                        content_type,
+                        file_size,
+                        "pending",
+                    ),
                 )
 
                 document_id = cursor.fetchone()[0]
@@ -31,6 +36,42 @@ class DocumentRepository:
             connection.commit()
 
         return document_id
+
+    def update_status(
+        self,
+        document_id: int,
+        status: str,
+    ) -> None:
+        with psycopg.connect(settings.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE documents
+                    SET
+                        status = %s,
+                        updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (status, document_id),
+                )
+
+            connection.commit()
+
+    def get_filename(self, document_id: int) -> str | None:
+        with psycopg.connect(settings.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT filename
+                    FROM documents
+                    WHERE id = %s
+                    """,
+                    (document_id,),
+                )
+
+                row = cursor.fetchone()
+
+        return row[0] if row else None
 
     def get_document(self, document_id: int):
         with psycopg.connect(settings.database_url) as connection:
@@ -46,54 +87,47 @@ class DocumentRepository:
                         created_at,
                         updated_at
                     FROM documents
-                    WHERE id = %s;
+                    WHERE id = %s
                     """,
                     (document_id,),
                 )
-                row = cursor.fetchone()
 
-                if row is None:
-                    return None
+                return cursor.fetchone()
 
-                return Document(
-                    id=row[0],
-                    filename=row[1],
-                    content_type=row[2],
-                    file_size=row[3],
-                    status=row[4],
-                    created_at=row[5],
-                    updated_at=row[6],
-                )
-            
-    def update_status(self, document_id: int, status: str) -> None:
+    def list_documents(self):
         with psycopg.connect(settings.database_url) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    UPDATE documents
-                    SET status = %s,
-                        updated_at = NOW()
-                    WHERE id = %s;
-                    """,
-                    (status, document_id),
+                    SELECT
+                        id,
+                        filename,
+                        content_type,
+                        file_size,
+                        status,
+                        created_at,
+                        updated_at
+                    FROM documents
+                    ORDER BY created_at DESC
+                    """
                 )
-    
+
+                return cursor.fetchall()
+
+    def delete_document(self, document_id: int) -> bool:
+        with psycopg.connect(settings.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    DELETE FROM documents
+                    WHERE id = %s
+                    RETURNING id
+                    """,
+                    (document_id,),
+                )
+
+                deleted = cursor.fetchone()
+
             connection.commit()
 
-    def get_filename(self, document_id: int) -> str | None:
-        with psycopg.connect(settings.database_url) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT filename
-                    FROM documents
-                    WHERE id = %s;
-                    """,
-                    (document_id,),
-                )
-                row = cursor.fetchone()
-
-                if row is None:
-                    return None
-
-                return row[0]
+        return deleted is not None

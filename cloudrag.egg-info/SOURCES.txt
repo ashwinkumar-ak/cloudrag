@@ -7,6 +7,7 @@ backend/chunking_test.py
 backend/config.py
 backend/database.py
 backend/db_test.py
+backend/document_parser.py
 backend/embedding.py
 backend/health.py
 backend/ingestion.py

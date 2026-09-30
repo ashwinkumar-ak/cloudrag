@@ -1,1 +1,6 @@
-CloudRAG is a document intelligence platform. It uses PostgreSQL and pgvector to store and search document embeddings.
+Prometheus is an open-source monitoring tool designed to capture and process numeric time-series data with associated metrics, labels, and timestamps.
+
+Captures and stores time-series data with metrics, labels, and timestamps.
+Uses HTTP scraping to gather metrics from targets like Kubernetes, databases, and applications.
+Supports diverse infrastructure platforms for comprehensive monitoring.
+Integrates with Alertmanager to provide powerful alerting capabilities.

@@ -12,6 +12,10 @@ dependencies = [
     "sentence-transformers==6.1.0",
     "prometheus-client==0.23.1",
     "requests",
+    "pymupdf",
+    "python-docx",
+    "python-pptx",
+    "openpyxl",
 ]
 
 [tool.setuptools.packages.find]

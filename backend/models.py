@@ -16,6 +16,7 @@ class Document(BaseModel):
 class SearchRequest(BaseModel):
     query: str = Field(min_length=1)
     limit: int = Field(default=5, ge=1, le=20)
+    document_ids: list[int] = Field(default_factory=list)
 
 
 class SearchResult(BaseModel):
@@ -25,9 +26,12 @@ class SearchResult(BaseModel):
     content: str
     distance: float
 
+
 class AskRequest(BaseModel):
     question: str = Field(min_length=1)
     limit: int = Field(default=5, ge=1, le=10)
+    document_ids: list[int] = Field(default_factory=list)
+    session_id: int | None = None
 
 
 class Citation(BaseModel):
@@ -42,3 +46,41 @@ class Citation(BaseModel):
 class AskResponse(BaseModel):
     answer: str
     citations: list[Citation]
+    session_id: int
+
+class ChatSession(BaseModel):
+    id: int
+    title: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ChatMessage(BaseModel):
+    id: int
+    session_id: int
+    role: str
+    content: str
+    created_at: datetime
+
+
+class CreateSessionRequest(BaseModel):
+    title: str = Field(
+        default="New Chat",
+        min_length=1,
+        max_length=200,
+    )
+
+
+class SessionResponse(BaseModel):
+    id: int
+    title: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ChatMessageResponse(BaseModel):
+    id: int
+    session_id: int
+    role: str
+    content: str
+    created_at: datetime

@@ -1,3 +1,4 @@
+import json
 import os
 import time
 
@@ -34,9 +35,18 @@ class LLMService:
                         "prompt": prompt,
                         "stream": False,
                         "think": False,
+                        "format": {
+                            "type": "object",
+                            "properties": {
+                                "answer": {
+                                    "type": "string"
+                                }
+                            },
+                            "required": ["answer"],
+                        },
                         "options": {
                             "temperature": 0,
-                            "num_predict": 150,
+                            "num_predict": 180,
                         },
                     },
                     timeout=300,
@@ -50,20 +60,47 @@ class LLMService:
                 ) from exc
 
             try:
-                answer = response.json()["response"]
-            except (ValueError, KeyError, TypeError) as exc:
+                data = response.json()
+            except ValueError as exc:
                 raise LLMGenerationError(
                     "The language model returned an invalid response."
                 ) from exc
 
-            return self._clean_answer(answer)
+            raw_response = data.get("response")
+
+            if not isinstance(raw_response, str):
+                raise LLMGenerationError(
+                    "The language model returned an invalid response."
+                )
+
+            answer = self._parse_answer(raw_response)
+
+            if not answer:
+                raise LLMGenerationError(
+                    "The language model returned an empty answer."
+                )
+
+            return answer
 
         finally:
             duration = time.perf_counter() - start
             LLM_LATENCY.observe(duration)
 
-    def _clean_answer(self, answer: str) -> str:
-        if "</think>" in answer:
-            answer = answer.split("</think>", 1)[1]
+    def _parse_answer(self, raw_response: str) -> str:
+        raw_response = raw_response.strip()
 
-        return answer.strip()
+        try:
+            parsed = json.loads(raw_response)
+
+            if isinstance(parsed, dict):
+                answer = parsed.get("answer")
+
+                if isinstance(answer, str):
+                    return answer.strip()
+
+        except json.JSONDecodeError:
+            pass
+
+        # Fallback in case the local Ollama version/model does
+        # not perfectly follow the JSON schema.
+        return raw_response
