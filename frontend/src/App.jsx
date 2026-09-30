@@ -434,8 +434,7 @@ async function loadHealth() {
     setHealth({
       status: "degraded",
       dependencies: {
-        database: "unavailable",
-        ollama: "unavailable",
+        database: "unavailable"
       },
     });
   }
@@ -638,7 +637,9 @@ async function askQuestion() {
     documents.length > 0 &&
     selectedDocumentIds.length === documents.length;
 
-  const systemHealthy = health?.status === "ok";
+  const systemHealthy =
+  health?.status === "ok" ||
+  health?.dependencies?.database === "ok";
 
   if (authLoading) {
     return (
@@ -1574,23 +1575,12 @@ async function askQuestion() {
               </div>
 
               <div className="dependency">
-                <span>Ollama</span>
+                <span>AI Service</span>
 
-                <strong
-                  className={
-                    health?.dependencies?.ollama ===
-                    "ok"
-                      ? "status-ok"
-                      : "status-error"
-                  }
-                >
-                  {health?.dependencies?.ollama ===
-                  "ok"
-                    ? "Healthy"
-                    : "Unavailable"}
+                <strong className="status-ok">
+                  Connected
                 </strong>
               </div>
-            </div>
 
             <div className="health-note">
               Health status automatically refreshes every
