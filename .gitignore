@@ -27,6 +27,7 @@ test-pdf-document.pdf
 test-word-document.docx
 test.txt
 cloudrag-monitoring-test.txt
+test-excel-document.xlsx
 
 # IDE / OS
 .vscode/
