@@ -126,7 +126,6 @@ function App() {
 
       saveToken(data.access_token);
       setToken(data.access_token);
-      setUser(data.user);
       setAuthPassword("");
       setAuthError("");
     } catch (error) {
