@@ -2570,3 +2570,515 @@ input {
   background: #2d3239;
   border-color: #4b515b;
 }
+
+/* =========================================================
+   MOBILE NAVIGATION
+   ========================================================= */
+
+.mobile-menu-button {
+  display: none;
+}
+
+.mobile-sidebar-overlay {
+  display: none;
+}
+
+/* Prevent long content from creating horizontal overflow */
+.app-shell,
+.chat-shell,
+.chat-content,
+.messages-container,
+.message-list,
+.composer-area {
+  max-width: 100%;
+}
+
+/* =========================================================
+   MOBILE
+   ========================================================= */
+
+@media (max-width: 700px) {
+
+  html,
+  body,
+  #root {
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .app-shell {
+    width: 100%;
+    max-width: 100%;
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden;
+  }
+
+  /* -------------------------
+     Mobile sidebar
+     ------------------------- */
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+
+    width: min(300px, 86vw);
+    min-width: 0;
+    height: 100dvh;
+
+    transform: translateX(-105%);
+
+    z-index: 300;
+
+    box-shadow:
+      10px 0 35px rgba(0, 0, 0, 0.18);
+
+    transition:
+      transform 220ms ease;
+  }
+
+  .sidebar.mobile-open {
+    transform: translateX(0);
+  }
+
+  .mobile-sidebar-overlay {
+    display: block;
+
+    position: fixed;
+    inset: 0;
+
+    width: 100%;
+    height: 100%;
+
+    padding: 0;
+    margin: 0;
+
+    border: 0;
+
+    background: rgba(15, 23, 42, 0.35);
+
+    z-index: 250;
+
+    cursor: pointer;
+  }
+
+  /* -------------------------
+     Main chat
+     ------------------------- */
+
+  .chat-shell {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    height: 100dvh;
+    min-height: 0;
+  }
+
+  /* -------------------------
+     Header
+     ------------------------- */
+
+  .chat-header {
+    flex: 0 0 56px;
+    width: 100%;
+    height: 56px;
+
+    min-width: 0;
+
+    padding:
+      0
+      10px
+      0
+      8px;
+
+    gap: 8px;
+  }
+
+  .mobile-menu-button {
+    width: 36px;
+    height: 36px;
+
+    flex: 0 0 36px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    padding: 0;
+
+    border: 1px solid var(--cr-border);
+    border-radius: 8px;
+
+    background: var(--cr-surface);
+    color: var(--cr-text);
+
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  .mobile-menu-button:active {
+    background: var(--cr-surface-hover);
+  }
+
+  .chat-header-left {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .chat-title {
+    max-width: 100%;
+    font-size: 12px;
+  }
+
+  .chat-subtitle {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .chat-header-actions {
+    flex: 0 0 auto;
+    min-width: 0;
+    gap: 5px;
+    margin-left: 4px;
+  }
+
+  /* Hide the desktop health indicator on small screens */
+  .header-health {
+    display: none;
+  }
+
+  /*
+    The email can consume a lot of horizontal space
+    on a phone. Keep only the logout button visible.
+  */
+  .chat-header-actions > div {
+    margin-right: 0 !important;
+  }
+
+  .chat-header-actions > div > span {
+    display: none !important;
+  }
+
+  /* -------------------------
+     Chat content
+     ------------------------- */
+
+  .chat-content {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .messages-container {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+
+    padding:
+      18px
+      10px
+      155px;
+  }
+
+  .message-list {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+
+    gap: 18px;
+  }
+
+  .message {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+
+    gap: 7px;
+  }
+
+  .message-avatar {
+    width: 28px;
+    height: 28px;
+    flex: 0 0 28px;
+
+    font-size: 7px;
+  }
+
+  .message-body {
+    min-width: 0;
+    max-width: calc(100% - 35px);
+  }
+
+  .message-text {
+    max-width: 100%;
+
+    font-size: 12px;
+    line-height: 1.6;
+
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .user-message .message-body,
+  .assistant-message .message-body {
+    max-width: calc(100% - 35px);
+  }
+
+  .assistant-message .message-body {
+    padding-left: 10px;
+  }
+
+  /* -------------------------
+     Welcome screen
+     ------------------------- */
+
+  .welcome-screen {
+    width: 100%;
+    max-width: 100%;
+
+    padding:
+      20px
+      5px
+      80px;
+  }
+
+  .welcome-screen h1 {
+    max-width: 100%;
+    font-size: 20px;
+  }
+
+  .welcome-screen p {
+    max-width: 100%;
+    font-size: 11px;
+  }
+
+  .suggestion-grid {
+    width: 100%;
+    max-width: 100%;
+
+    grid-template-columns: 1fr;
+
+    gap: 7px;
+    margin-top: 20px;
+  }
+
+  .suggestion-grid button {
+    width: 100%;
+    min-width: 0;
+    min-height: 64px;
+  }
+
+  /* -------------------------
+     Composer
+     ------------------------- */
+
+  .composer-area {
+    left: 0;
+    right: 0;
+    bottom: 0;
+
+    width: 100%;
+    max-width: 100%;
+
+    padding:
+      8px
+      8px
+      calc(8px + env(safe-area-inset-bottom));
+
+    box-sizing: border-box;
+  }
+
+  .active-sources {
+    width: 100%;
+    max-width: 100%;
+
+    min-width: 0;
+
+    margin-bottom: 6px;
+  }
+
+  .active-sources-label {
+    flex: 0 0 auto;
+  }
+
+  .source-pill {
+    max-width: 120px;
+    min-width: 0;
+  }
+
+  .active-sources button {
+    flex: 0 0 auto;
+  }
+
+  .composer {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+
+    min-height: 52px;
+
+    padding:
+      7px
+      7px
+      7px
+      12px;
+
+    border-radius: 13px;
+
+    gap: 6px;
+  }
+
+  .composer textarea {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+
+    min-height: 38px;
+    max-height: 140px;
+
+    font-size: 14px;
+    line-height: 1.45;
+
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .send-button {
+    width: 38px;
+    height: 38px;
+    flex: 0 0 38px;
+
+    border-radius: 9px;
+
+    font-size: 17px;
+  }
+
+  .composer-footer {
+    display: none;
+  }
+
+  /* -------------------------
+     Side panels
+     ------------------------- */
+
+  .side-panel {
+    position: fixed;
+
+    top: 0;
+    right: 0;
+    bottom: 0;
+
+    width: min(390px, 94vw);
+    max-width: 94vw;
+
+    height: 100dvh;
+
+    z-index: 400;
+  }
+
+  .side-panel-header {
+    min-height: 64px;
+    flex-basis: 64px;
+
+    padding:
+      0
+      12px
+      0
+      15px;
+  }
+
+  .panel-body {
+    padding: 13px;
+  }
+
+  /* Make touch targets easier to use */
+  .panel-close,
+  .icon-button,
+  .upload-button,
+  .search-input-row button {
+    min-height: 36px;
+  }
+
+  .knowledge-item {
+    min-height: 60px;
+  }
+
+  /* -------------------------
+     File picker
+     ------------------------- */
+
+  .file-picker {
+    min-width: 0;
+    gap: 9px;
+    padding: 10px;
+  }
+
+  .file-picker-icon {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+  }
+
+  .file-picker-content {
+    min-width: 0;
+  }
+
+  .file-picker-action {
+    min-height: 34px;
+    padding: 0 9px;
+    font-size: 11px;
+  }
+}
+
+/* =========================================================
+   VERY SMALL PHONES
+   ========================================================= */
+
+@media (max-width: 420px) {
+
+  .sidebar {
+    width: 84vw;
+  }
+
+  .chat-header {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
+  .mobile-menu-button {
+    width: 34px;
+    height: 34px;
+    flex-basis: 34px;
+  }
+
+  .messages-container {
+    padding-left: 7px;
+    padding-right: 7px;
+    padding-bottom: 150px;
+  }
+
+  .composer-area {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
+  .composer {
+    padding-left: 10px;
+  }
+
+  .send-button {
+    width: 37px;
+    height: 37px;
+    flex-basis: 37px;
+  }
+
+  .source-pill {
+    max-width: 95px;
+  }
+}

@@ -79,8 +79,9 @@ function App() {
   const [file, setFile] = useState(null);
   const [uploadStatus, setUploadStatus] = useState("");
 
-  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
-  const [systemOpen, setSystemOpen] = useState(false);
+const [knowledgeOpen, setKnowledgeOpen] = useState(false);
+const [systemOpen, setSystemOpen] = useState(false);
+const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
@@ -875,7 +876,20 @@ async function askQuestion() {
         theme === "dark" ? "theme-dark" : "theme-light"
       }`}
     >
-      <aside className="sidebar">
+      {mobileSidebarOpen && (
+        <button
+          type="button"
+          className="mobile-sidebar-overlay"
+          aria-label="Close menu"
+          onClick={() => setMobileSidebarOpen(false)}
+        />
+      )}
+
+      <aside
+        className={`sidebar ${
+          mobileSidebarOpen ? "mobile-open" : ""
+        }`}
+      >
         <div className="sidebar-brand">
           <div className="brand-mark">C</div>
 
@@ -922,7 +936,10 @@ async function askQuestion() {
                   : ""
               }`}
               key={session.id}
-              onClick={() => loadSession(session.id)}
+              onClick={() => {
+                loadSession(session.id);
+                setMobileSidebarOpen(false);
+              }}
             >
               <span className="session-icon">▱</span>
 
@@ -944,9 +961,11 @@ async function askQuestion() {
             className={`sidebar-tool ${
               knowledgeOpen ? "selected" : ""
             }`}
-            onClick={() =>
-              setKnowledgeOpen((current) => !current)
-            }
+            onClick={() => {
+              setKnowledgeOpen((current) => !current);
+              setSystemOpen(false);
+              setMobileSidebarOpen(false);
+            }}
           >
             <span>▤</span>
             Knowledge base
@@ -959,9 +978,11 @@ async function askQuestion() {
             className={`sidebar-tool ${
               systemOpen ? "selected" : ""
             }`}
-            onClick={() =>
-              setSystemOpen((current) => !current)
-            }
+            onClick={() => {
+              setSystemOpen((current) => !current);
+              setKnowledgeOpen(false);
+              setMobileSidebarOpen(false);
+            }}
           >
             <span>◉</span>
             System status
@@ -1006,6 +1027,14 @@ async function askQuestion() {
 
       <section className="chat-shell">
         <header className="chat-header">
+          <button
+            type="button"
+            className="mobile-menu-button"
+            aria-label="Open menu"
+            onClick={() => setMobileSidebarOpen(true)}
+          >
+            ☰
+          </button>
           <div className="chat-header-left">
             <div className="chat-title">
               {currentSession?.title || "New Chat"}
