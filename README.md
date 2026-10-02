@@ -829,3 +829,7 @@ Failed documents retain their original stored file and can be retried from the K
 ### Streaming responses
 
 Cloud chat supports Server-Sent Events (SSE) for assistant responses. The frontend progressively renders Gemini output while the backend preserves the final answer and citations in the existing chat history.
+
+## RAG evaluation
+
+The cloud deployment includes a lightweight, user-scoped RAG evaluation runner. It accepts 1–10 reference cases and measures retrieval hit rate (when expected document IDs are supplied), reference-answer token coverage, exact-match rate, and latency. It does not call a separate LLM judge; each case runs through the existing RAG pipeline.

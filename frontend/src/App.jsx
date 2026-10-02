@@ -11,6 +11,7 @@ import {
   streamAskQuestion,
   downloadDocument,
   compareDocuments,
+  runRAGEvaluation,
 } from "./api";
 
 function formatFileSize(bytes) {
@@ -90,6 +91,20 @@ const [comparisonOpen, setComparisonOpen] = useState(false);
 const [comparisonLoading, setComparisonLoading] = useState(false);
 const [comparisonResult, setComparisonResult] = useState(null);
 const [comparisonError, setComparisonError] = useState("");
+const [evaluationOpen, setEvaluationOpen] = useState(false);
+const [evaluationLoading, setEvaluationLoading] = useState(false);
+const [evaluationCases, setEvaluationCases] = useState(
+  JSON.stringify([
+    {
+      question: "What is the main purpose of this document?",
+      expected_answer: "Replace this with the expected answer.",
+      expected_document_ids: [],
+      document_ids: [],
+    },
+  ], null, 2)
+);
+const [evaluationResult, setEvaluationResult] = useState(null);
+const [evaluationError, setEvaluationError] = useState("");
 
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
@@ -593,6 +608,29 @@ async function askQuestion() {
     setAskError(error.message);
   } finally {
     setAsking(false);
+  }
+}
+
+ async function runRAGEvaluationSuite() {
+  setEvaluationLoading(true);
+  setEvaluationError("");
+  setEvaluationResult(null);
+
+  try {
+    const cases = JSON.parse(evaluationCases);
+    if (!Array.isArray(cases) || cases.length < 1 || cases.length > 10) {
+      throw new Error("Provide between 1 and 10 evaluation cases.");
+    }
+    const result = await runRAGEvaluation(cases, 5);
+    setEvaluationResult(result);
+  } catch (error) {
+    setEvaluationError(
+      error instanceof SyntaxError
+        ? "Evaluation cases must be valid JSON."
+        : error.message
+    );
+  } finally {
+    setEvaluationLoading(false);
   }
 }
 
@@ -1126,6 +1164,19 @@ async function askQuestion() {
               }`}
             />
           </button>
+          <button
+            className={`sidebar-tool ${evaluationOpen ? "selected" : ""}`}
+            onClick={() => {
+              setEvaluationOpen((current) => !current);
+              setKnowledgeOpen(false);
+              setSystemOpen(false);
+              setMobileSidebarOpen(false);
+            }}
+          >
+            <span>◇</span>
+            RAG evaluation
+          </button>
+
           <button
             className="sidebar-tool theme-toggle"
             onClick={() =>
@@ -1750,7 +1801,7 @@ async function askQuestion() {
                       </strong>
 
                       <span>
-                        {formatFileSize(
+                        #{document.id} · {formatFileSize(
                           document.file_size
                         )}{" "}
                         · {document.status}
@@ -1882,6 +1933,71 @@ async function askQuestion() {
                 </div>
               )}
             </div>
+          </div>
+        </aside>
+      )}
+
+      {evaluationOpen && (
+        <aside className="side-panel evaluation-panel">
+          <div className="side-panel-header">
+            <div>
+              <h2>RAG evaluation</h2>
+              <p>Run up to 10 reference questions against the current RAG pipeline.</p>
+            </div>
+            <button className="panel-close" onClick={() => setEvaluationOpen(false)}>×</button>
+          </div>
+
+          <div className="panel-body">
+            <div className="evaluation-note">
+              <strong>What is measured</strong>
+              <span>Retrieval hit rate, reference-answer token coverage, exact match, and latency.</span>
+              <small>No LLM judge is used, so this adds no separate evaluation-model calls.</small>
+            </div>
+
+            <label className="evaluation-label">Evaluation cases (JSON)</label>
+            <textarea
+              className="evaluation-textarea"
+              value={evaluationCases}
+              onChange={(event) => setEvaluationCases(event.target.value)}
+              spellCheck={false}
+            />
+
+            {evaluationError && <div className="panel-error">{evaluationError}</div>}
+
+            <button
+              className="upload-button"
+              type="button"
+              onClick={runRAGEvaluationSuite}
+              disabled={evaluationLoading}
+            >
+              {evaluationLoading ? "Running evaluation..." : "Run evaluation"}
+            </button>
+
+            {evaluationResult && (
+              <div className="evaluation-results">
+                <div className="evaluation-metrics">
+                  <div><strong>{evaluationResult.cases}</strong><span>Cases</span></div>
+                  <div><strong>{evaluationResult.retrieval_hit_rate == null ? "—" : `${Math.round(evaluationResult.retrieval_hit_rate * 100)}%`}</strong><span>Retrieval hit</span></div>
+                  <div><strong>{Math.round(evaluationResult.reference_answer_coverage * 100)}%</strong><span>Answer coverage</span></div>
+                  <div><strong>{Math.round(evaluationResult.average_latency_ms)} ms</strong><span>Avg latency</span></div>
+                </div>
+
+                {evaluationResult.results.map((item) => (
+                  <div className="evaluation-case-result" key={item.case_number}>
+                    <strong>Case {item.case_number}</strong>
+                    <span>{item.question}</span>
+                    {item.error ? (
+                      <small className="document-error">{item.error}</small>
+                    ) : (
+                      <>
+                        <small>Retrieval: {item.expected_document_ids.length ? (item.retrieval_hit ? "hit" : "miss") : "not measured"} · Coverage: {Math.round(item.answer_coverage * 100)}% · {Math.round(item.latency_ms)} ms</small>
+                        <p>{item.generated_answer}</p>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </aside>
       )}
