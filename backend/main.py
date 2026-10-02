@@ -103,6 +103,28 @@ app = FastAPI(
 )
 
 
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request, exc):
+    # Keep API failures readable by browser clients even when an unexpected
+    # exception occurs. Without this, Starlette's error response can bypass
+    # the normal CORS response path and browsers report only "Failed to fetch".
+    origin = request.headers.get("origin")
+    headers = {}
+
+    if origin and origin == settings.frontend_url:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+        headers["Vary"] = "Origin"
+
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "An unexpected server error occurred while processing the request."
+        },
+        headers=headers,
+    )
+
+
 @app.middleware("http")
 async def metrics_middleware(request, call_next):
     start = time.perf_counter()
@@ -806,6 +828,13 @@ def compare_documents(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except LLMGenerationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:
+        # Return a controlled API error instead of an unhandled 500. This also
+        # lets the CORS middleware expose the response to the Vercel frontend.
+        raise HTTPException(
+            status_code=500,
+            detail="Document comparison failed. Check the Render logs for the underlying error.",
+        ) from exc
 
 
 # ---------------------------------------------------------------------------
