@@ -23,6 +23,10 @@ class Settings(BaseSettings):
 
     frontend_url: str = "http://localhost:5173"
 
+    max_upload_size_bytes: int = 20 * 1024 * 1024
+
+    security_headers_enabled: bool = True
+
     storage_backend: str = "local"
     local_storage_path: str = "./storage"
     supabase_url: str | None = None

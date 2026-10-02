@@ -14,6 +14,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi import Response
+from fastapi.responses import JSONResponse
 from fastapi.responses import StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST
 
@@ -60,6 +61,20 @@ from backend.repositories.chunks import ChunkRepository
 from backend.repositories.documents import DocumentRepository
 from backend.repositories.chat import ChatRepository
 from backend.repositories.users import UserRepository
+from backend.security import (
+    ASK_LIMIT,
+    ASK_WINDOW,
+    AUTH_LIMIT,
+    AUTH_WINDOW,
+    GENERAL_LIMIT,
+    GENERAL_WINDOW,
+    SEARCH_LIMIT,
+    SEARCH_WINDOW,
+    UPLOAD_LIMIT,
+    UPLOAD_WINDOW,
+    get_client_identifier,
+    rate_limiter,
+)
 
 
 embedding_service = EmbeddingService()
@@ -93,6 +108,92 @@ async def metrics_middleware(request, call_next):
 
     REQUEST_COUNT.inc()
     REQUEST_LATENCY.observe(duration)
+
+    return response
+
+
+@app.middleware("http")
+async def security_middleware(request, call_next):
+    client_id = get_client_identifier(request)
+    path = request.url.path
+
+    if path in {"/auth/login", "/auth/register"}:
+        limit = AUTH_LIMIT
+        window = AUTH_WINDOW
+        key = f"auth:{client_id}"
+        message = "Too many authentication attempts. Please try again later."
+    elif path == "/ask":
+        limit = ASK_LIMIT
+        window = ASK_WINDOW
+        key = f"ask:{client_id}"
+        message = "Too many RAG requests. Please try again later."
+    elif path == "/search":
+        limit = SEARCH_LIMIT
+        window = SEARCH_WINDOW
+        key = f"search:{client_id}"
+        message = "Too many search requests. Please try again later."
+    elif path == "/documents" and request.method == "POST":
+        limit = UPLOAD_LIMIT
+        window = UPLOAD_WINDOW
+        key = f"upload:{client_id}"
+        message = "Too many document uploads. Please try again later."
+    else:
+        limit = GENERAL_LIMIT
+        window = GENERAL_WINDOW
+        key = f"general:{client_id}"
+        message = "Too many requests. Please try again later."
+
+    if not rate_limiter.allow(key, limit, window):
+        response = JSONResponse(
+            status_code=429,
+            content={"detail": message},
+            headers={"Retry-After": str(window)},
+        )
+    else:
+        content_length = request.headers.get("content-length")
+
+        if (
+            content_length
+            and path == "/documents"
+            and request.method == "POST"
+        ):
+            try:
+                content_length_value = int(content_length)
+            except ValueError:
+                response = JSONResponse(
+                    status_code=400,
+                    content={"detail": "Invalid Content-Length header."},
+                )
+            else:
+                # Multipart/form-data has small framing overhead.
+                max_request_bytes = settings.max_upload_size_bytes + (1024 * 1024)
+
+                if content_length_value > max_request_bytes:
+                    response = JSONResponse(
+                        status_code=413,
+                        content={
+                            "detail": "Uploaded file is too large. Maximum file size is 20 MB."
+                        },
+                    )
+                else:
+                    response = await call_next(request)
+        else:
+            response = await call_next(request)
+
+    rate_limiter.cleanup()
+
+    if settings.security_headers_enabled:
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = (
+            "camera=(), microphone=(), geolocation=()"
+        )
+
+        if settings.environment.lower() == "production":
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
 
     return response
 
@@ -513,6 +614,12 @@ async def upload_document(
 
     filename = Path(file.filename).name
     content = await file.read()
+
+    if len(content) > settings.max_upload_size_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail="Uploaded file is too large. Maximum file size is 20 MB.",
+        )
 
     if not content:
         raise HTTPException(
