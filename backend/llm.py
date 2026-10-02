@@ -5,6 +5,7 @@ import requests
 
 from backend.config import settings
 from backend.metrics import LLM_LATENCY
+from backend.model_registry import validate_model
 
 
 class LLMGenerationError(RuntimeError):
@@ -17,7 +18,7 @@ class LLMService:
         model: str | None = None,
         api_key: str | None = None,
     ):
-        self.model = model or settings.gemini_model
+        self.model = validate_model(model or settings.gemini_model)
         self.api_key = api_key or settings.gemini_api_key
 
         self.base_url = settings.gemini_api_base_url

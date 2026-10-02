@@ -80,6 +80,7 @@ class RAGService:
         limit: int = 3,
         document_ids: list[int] | None = None,
         session_id: int | None = None,
+        model: str | None = None,
     ) -> tuple[list[dict], object]:
         """Prepare RAG context and return an answer chunk iterator."""
 
@@ -174,7 +175,8 @@ Rules:
 Return ONLY the final answer as plain text.
 """
 
-        return context, self.llm_service.generate_stream(prompt)
+        llm_service = LLMService(model=model)
+        return context, llm_service.generate_stream(prompt)
 
     def answer(
         self,
@@ -183,6 +185,7 @@ Return ONLY the final answer as plain text.
         limit: int = 3,
         document_ids: list[int] | None = None,
         session_id: int | None = None,
+        model: str | None = None,
     ) -> tuple[str, list[dict]]:
 
         if self.spreadsheet_query_service.is_spreadsheet_query(
@@ -282,6 +285,7 @@ Rules:
 The answer must be the final response to the user.
 """
 
-        answer = self.llm_service.generate(prompt)
+        llm_service = LLMService(model=model)
+        answer = llm_service.generate(prompt)
 
         return answer, context

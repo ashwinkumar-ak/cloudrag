@@ -1,5 +1,6 @@
 from backend.llm import LLMService
 from backend.rag import RAGService
+from backend.model_registry import validate_model
 
 
 class DocumentComparisonService:
@@ -15,7 +16,7 @@ class DocumentComparisonService:
         self.rag_service = RAGService()
         self.llm_service = LLMService()
 
-    def compare(self, document_ids: list[int], user_id: int) -> dict:
+    def compare(self, document_ids: list[int], user_id: int, model: str | None = None) -> dict:
         if len(document_ids) != 2 or document_ids[0] == document_ids[1]:
             raise ValueError("Select exactly two different documents to compare.")
 
@@ -76,6 +77,8 @@ class DocumentComparisonService:
                         f"[Excerpt {index} | chunk {item['chunk_index']}]:\n{item['content'][:1400]}"
                     )
             prompt_parts.append("")
+
+        self.llm_service = LLMService(model=validate_model(model))
 
         answer = self.llm_service.generate(
             "\n".join(prompt_parts),

@@ -33,6 +33,7 @@ from backend.embedding import EmbeddingService
 from backend.health import get_health_status, is_ready
 from backend.ingestion import IngestionService
 from backend.llm import LLMGenerationError
+from backend.model_registry import DEFAULT_MODEL, get_model_catalog, validate_model
 from backend.metrics import (
     get_metrics,
     REQUEST_COUNT,
@@ -48,6 +49,7 @@ from backend.models import (
     Document,
     LoginRequest,
     LoginResponse,
+    ModelSelectionRequest,
     RegisterRequest,
     SearchRequest,
     SearchResult,
@@ -90,6 +92,16 @@ comparison_service = DocumentComparisonService()
 chat_repository = ChatRepository()
 user_repository = UserRepository()
 document_storage = DocumentStorage()
+
+
+def resolve_model(model: str | None) -> str:
+    try:
+        return validate_model(model)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
 
 bearer_scheme = HTTPBearer(
     auto_error=False,
@@ -823,6 +835,7 @@ def compare_documents(
         return comparison_service.compare(
             document_ids=request.document_ids,
             user_id=user_id,
+            model=resolve_model(request.model),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -893,6 +906,21 @@ def search(
 
 
 # ---------------------------------------------------------------------------
+# Models
+# ---------------------------------------------------------------------------
+
+
+@app.get("/models")
+def list_models(
+    user_id: int = Depends(get_current_user_id),
+):
+    return {
+        "default_model": DEFAULT_MODEL,
+        "models": get_model_catalog(),
+    }
+
+
+# ---------------------------------------------------------------------------
 # RAG
 # ---------------------------------------------------------------------------
 
@@ -911,6 +939,7 @@ def ask(
 
     try:
         session_id = request.session_id
+        session_model = resolve_model(request.model)
 
         if session_id is not None:
             existing_session = chat_repository.get_session(
@@ -924,12 +953,24 @@ def ask(
                     detail="Session not found",
                 )
 
+            session_model = resolve_model(
+                request.model or existing_session[2]
+            )
+
+            if request.model and request.model != existing_session[2]:
+                chat_repository.set_model(
+                    session_id=session_id,
+                    user_id=user_id,
+                    model=session_model,
+                )
+
         answer, context = rag_service.answer(
             question=request.question,
             user_id=user_id,
             limit=request.limit,
             document_ids=request.document_ids or None,
             session_id=session_id,
+            model=session_model,
         )
 
         if session_id is None:
@@ -938,6 +979,7 @@ def ask(
                 title=generate_session_title(
                     request.question
                 ),
+                model=session_model,
             )
 
         session = chat_repository.get_session(
@@ -1002,6 +1044,7 @@ def ask_stream(
     RAG_REQUEST_COUNT.inc()
 
     session_id = request.session_id
+    session_model = resolve_model(request.model)
 
     if session_id is not None:
         existing_session = chat_repository.get_session(
@@ -1015,6 +1058,17 @@ def ask_stream(
                 detail="Session not found",
             )
 
+        session_model = resolve_model(
+            request.model or existing_session[2]
+        )
+
+        if request.model and request.model != existing_session[2]:
+            chat_repository.set_model(
+                session_id=session_id,
+                user_id=user_id,
+                model=session_model,
+            )
+
     try:
         context, answer_chunks = rag_service.answer_stream(
             question=request.question,
@@ -1022,6 +1076,7 @@ def ask_stream(
             limit=request.limit,
             document_ids=request.document_ids or None,
             session_id=session_id,
+            model=session_model,
         )
     except LLMGenerationError as exc:
         raise HTTPException(
@@ -1033,6 +1088,7 @@ def ask_stream(
         session_id = chat_repository.create_session(
             user_id=user_id,
             title=generate_session_title(request.question),
+            model=session_model,
         )
 
     session = chat_repository.get_session(
@@ -1132,9 +1188,12 @@ def create_session(
     request: CreateSessionRequest,
     user_id: int = Depends(get_current_user_id),
 ):
+    session_model = resolve_model(request.model)
+
     session_id = chat_repository.create_session(
         user_id=user_id,
         title=request.title.strip() or "New Chat",
+        model=session_model,
     )
 
     session = chat_repository.get_session(
@@ -1145,8 +1204,9 @@ def create_session(
     return SessionResponse(
         id=session[0],
         title=session[1],
-        created_at=session[2],
-        updated_at=session[3],
+        model=session[2],
+        created_at=session[3],
+        updated_at=session[4],
     )
 
 
@@ -1165,11 +1225,50 @@ def list_sessions(
         SessionResponse(
             id=row[0],
             title=row[1],
-            created_at=row[2],
-            updated_at=row[3],
+            model=row[2],
+            created_at=row[3],
+            updated_at=row[4],
         )
         for row in rows
     ]
+
+
+@app.put("/sessions/{session_id}/model")
+def update_session_model(
+    session_id: int,
+    request: ModelSelectionRequest,
+    user_id: int = Depends(get_current_user_id),
+):
+    model = resolve_model(request.model)
+    session = chat_repository.get_session(
+        session_id=session_id,
+        user_id=user_id,
+    )
+
+    if not session:
+        raise HTTPException(
+            status_code=404,
+            detail="Session not found",
+        )
+
+    chat_repository.set_model(
+        session_id=session_id,
+        user_id=user_id,
+        model=model,
+    )
+
+    updated = chat_repository.get_session(
+        session_id=session_id,
+        user_id=user_id,
+    )
+
+    return SessionResponse(
+        id=updated[0],
+        title=updated[1],
+        model=updated[2],
+        created_at=updated[3],
+        updated_at=updated[4],
+    )
 
 
 @app.get(

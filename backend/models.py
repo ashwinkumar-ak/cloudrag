@@ -37,6 +37,8 @@ class SearchResult(BaseModel):
 
 
 class AskRequest(BaseModel):
+    model: str | None = None
+
     question: str = Field(min_length=1)
 
     limit: int = Field(
@@ -70,6 +72,7 @@ class AskResponse(BaseModel):
 class ChatSession(BaseModel):
     id: int
     title: str
+    model: str
     created_at: datetime
     updated_at: datetime
 
@@ -89,10 +92,17 @@ class CreateSessionRequest(BaseModel):
         max_length=200,
     )
 
+    model: str | None = None
+
+
+class ModelSelectionRequest(BaseModel):
+    model: str = Field(min_length=1, max_length=100)
+
 
 class SessionResponse(BaseModel):
     id: int
     title: str
+    model: str
     created_at: datetime
     updated_at: datetime
 
@@ -150,6 +160,7 @@ class LoginResponse(BaseModel):
     user: UserResponse
 
 class CompareRequest(BaseModel):
+    model: str | None = None
     document_ids: list[int] = Field(min_length=2, max_length=2)
 
 

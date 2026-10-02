@@ -11,6 +11,7 @@ class ChatRepository:
         self,
         user_id: int,
         title: str = "New Chat",
+        model: str = "gemini-3.5-flash-lite",
     ) -> int:
         with psycopg.connect(
             settings.database_url
@@ -21,14 +22,16 @@ class ChatRepository:
                     """
                     INSERT INTO chat_sessions (
                         user_id,
-                        title
+                        title,
+                        model
                     )
-                    VALUES (%s, %s)
+                    VALUES (%s, %s, %s)
                     RETURNING id
                     """,
                     (
                         user_id,
                         title,
+                        model,
                     ),
                 )
 
@@ -52,6 +55,7 @@ class ChatRepository:
                     SELECT
                         id,
                         title,
+                        model,
                         created_at,
                         updated_at
                     FROM chat_sessions
@@ -78,6 +82,7 @@ class ChatRepository:
                     SELECT
                         id,
                         title,
+                        model,
                         created_at,
                         updated_at
                     FROM chat_sessions
@@ -91,6 +96,33 @@ class ChatRepository:
                 )
 
                 return cursor.fetchone()
+
+    def set_model(
+        self,
+        session_id: int,
+        user_id: int,
+        model: str,
+    ) -> None:
+        with psycopg.connect(
+            settings.database_url
+        ) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE chat_sessions
+                    SET
+                        model = %s,
+                        updated_at = NOW()
+                    WHERE id = %s
+                    AND user_id = %s
+                    """,
+                    (
+                        model,
+                        session_id,
+                        user_id,
+                    ),
+                )
+            connection.commit()
 
     def delete_session(
         self,

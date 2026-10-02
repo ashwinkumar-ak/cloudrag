@@ -11,6 +11,7 @@ import {
   streamAskQuestion,
   downloadDocument,
   compareDocuments,
+  runEvaluation,
 } from "./api";
 
 function formatFileSize(bytes) {
@@ -85,6 +86,25 @@ function App() {
 const [knowledgeOpen, setKnowledgeOpen] = useState(false);
 const [selectedCitation, setSelectedCitation] = useState(null);
 const [systemOpen, setSystemOpen] = useState(false);
+  const [evaluationOpen, setEvaluationOpen] = useState(false);
+  const [evaluationCases, setEvaluationCases] = useState(
+    JSON.stringify(
+      [
+        {
+          question: "What is the main topic of this document?",
+          expected_answer: "Replace this with the reference answer.",
+          expected_document_ids: [],
+          document_ids: [],
+          limit: 5,
+        },
+      ],
+      null,
+      2
+    )
+  );
+  const [evaluationResult, setEvaluationResult] = useState(null);
+  const [evaluationLoading, setEvaluationLoading] = useState(false);
+  const [evaluationError, setEvaluationError] = useState("");
 const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 const [comparisonOpen, setComparisonOpen] = useState(false);
 const [comparisonLoading, setComparisonLoading] = useState(false);
@@ -596,6 +616,55 @@ async function askQuestion() {
   }
 }
 
+ async function runRAGEvaluation() {
+  if (evaluationLoading) {
+    return;
+  }
+
+  setEvaluationLoading(true);
+  setEvaluationError("");
+  setEvaluationResult(null);
+
+  try {
+    let parsedCases;
+
+    try {
+      parsedCases = JSON.parse(evaluationCases);
+    } catch {
+      throw new Error("Evaluation cases must contain valid JSON.");
+    }
+
+    if (!Array.isArray(parsedCases)) {
+      throw new Error("Evaluation cases must be a JSON array.");
+    }
+
+    if (parsedCases.length < 1 || parsedCases.length > 10) {
+      throw new Error("Provide between 1 and 10 evaluation cases.");
+    }
+
+    for (const [index, item] of parsedCases.entries()) {
+      if (!item || typeof item !== "object") {
+        throw new Error(`Case ${index + 1} must be a JSON object.`);
+      }
+
+      if (!String(item.question || "").trim()) {
+        throw new Error(`Case ${index + 1} is missing a question.`);
+      }
+
+      if (!String(item.expected_answer || "").trim()) {
+        throw new Error(`Case ${index + 1} is missing expected_answer.`);
+      }
+    }
+
+    const result = await runEvaluation(parsedCases, 5);
+    setEvaluationResult(result);
+  } catch (error) {
+    setEvaluationError(error.message || "Evaluation failed.");
+  } finally {
+    setEvaluationLoading(false);
+  }
+}
+
  async function runDocumentComparison() {
   if (selectedDocumentIds.length !== 2 || comparisonLoading) {
     return;
@@ -992,6 +1061,21 @@ async function askQuestion() {
             <span className="tool-count">
               {documents.length}
             </span>
+          </button>
+
+          <button
+            className={`sidebar-tool ${
+              evaluationOpen ? "selected" : ""
+            }`}
+            onClick={() => {
+              setEvaluationOpen((current) => !current);
+              setKnowledgeOpen(false);
+              setSystemOpen(false);
+              setMobileSidebarOpen(false);
+            }}
+          >
+            <span>◈</span>
+            Evaluation
           </button>
 
           <button
@@ -1635,6 +1719,9 @@ async function askQuestion() {
                       <strong title={document.filename}>
                         {document.filename}
                       </strong>
+                      <span className="document-id">
+                        Document ID: {document.id}
+                      </span>
 
                       <span>
                         {formatFileSize(
@@ -1769,6 +1856,108 @@ async function askQuestion() {
                 </div>
               )}
             </div>
+          </div>
+        </aside>
+      )}
+
+      {evaluationOpen && (
+        <aside className="side-panel evaluation-panel">
+          <div className="side-panel-header">
+            <div>
+              <h2>RAG evaluation</h2>
+              <p>Measure retrieval and answer quality against reference cases.</p>
+            </div>
+            <button
+              className="panel-close"
+              onClick={() => setEvaluationOpen(false)}
+            >
+              ×
+            </button>
+          </div>
+
+          <div className="panel-body">
+            <div className="evaluation-note">
+              Add up to 10 cases. Each case can optionally specify the document IDs
+              that should be retrieved. Evaluation runs against your private documents.
+            </div>
+
+            <div className="panel-section-title">Evaluation cases (JSON)</div>
+            <textarea
+              className="evaluation-textarea"
+              value={evaluationCases}
+              onChange={(event) => setEvaluationCases(event.target.value)}
+              spellCheck="false"
+            />
+
+            <button
+              type="button"
+              className="upload-button evaluation-run-button"
+              onClick={runRAGEvaluation}
+              disabled={evaluationLoading}
+            >
+              {evaluationLoading ? "Running evaluation..." : "Run evaluation"}
+            </button>
+
+            {evaluationError && (
+              <div className="panel-error">{evaluationError}</div>
+            )}
+
+            {evaluationResult && (
+              <div className="evaluation-results">
+                <div className="evaluation-metrics">
+                  <div className="evaluation-metric">
+                    <span>Retrieval hit rate</span>
+                    <strong>
+                      {evaluationResult.retrieval_hit_rate == null
+                        ? "N/A"
+                        : `${(evaluationResult.retrieval_hit_rate * 100).toFixed(1)}%`}
+                    </strong>
+                  </div>
+                  <div className="evaluation-metric">
+                    <span>Answer coverage</span>
+                    <strong>{(evaluationResult.reference_answer_coverage * 100).toFixed(1)}%</strong>
+                  </div>
+                  <div className="evaluation-metric">
+                    <span>Exact match</span>
+                    <strong>{(evaluationResult.exact_match_rate * 100).toFixed(1)}%</strong>
+                  </div>
+                  <div className="evaluation-metric">
+                    <span>Average latency</span>
+                    <strong>{evaluationResult.average_latency_ms} ms</strong>
+                  </div>
+                  <div className="evaluation-metric">
+                    <span>P95 latency</span>
+                    <strong>{evaluationResult.p95_latency_ms} ms</strong>
+                  </div>
+                  <div className="evaluation-metric">
+                    <span>Cases</span>
+                    <strong>{evaluationResult.successful_cases}/{evaluationResult.cases}</strong>
+                  </div>
+                </div>
+
+                <div className="panel-section-title">Case results</div>
+                {evaluationResult.results.map((item) => (
+                  <div className="evaluation-case" key={item.case_number}>
+                    <div className="evaluation-case-header">
+                      <strong>Case {item.case_number}</strong>
+                      <span>{item.latency_ms} ms</span>
+                    </div>
+                    <p>{item.question}</p>
+                    <div className="evaluation-case-status">
+                      Retrieval: {item.retrieval_hit ? "Hit" : "Miss"} · Coverage: {(item.answer_coverage * 100).toFixed(1)}% · Exact: {item.exact_match ? "Yes" : "No"}
+                    </div>
+                    {item.error ? (
+                      <div className="document-error"><small>{item.error}</small></div>
+                    ) : (
+                      <details>
+                        <summary>Generated answer</summary>
+                        <div className="evaluation-answer">{item.generated_answer}</div>
+                      </details>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </aside>
       )}

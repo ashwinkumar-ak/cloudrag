@@ -36,7 +36,6 @@ services:
       - "8000:8000"
     volumes:
       - huggingface_cache:/root/.cache/huggingface
-      - document_storage:/app/storage
     depends_on:
       postgres:
         condition: service_healthy
@@ -67,4 +66,3 @@ services:
 volumes:
   postgres_data:
   huggingface_cache:
-  document_storage:

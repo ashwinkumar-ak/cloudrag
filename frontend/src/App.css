@@ -3707,3 +3707,125 @@ input {
     grid-column: 2;
   }
 }
+
+.evaluation-panel {
+  width: min(520px, 100vw);
+}
+
+.evaluation-note {
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid var(--cr-border);
+  border-radius: 10px;
+  color: var(--cr-text-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.evaluation-textarea {
+  width: 100%;
+  min-height: 280px;
+  resize: vertical;
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--cr-border);
+  border-radius: 10px;
+  background: var(--cr-surface);
+  color: var(--cr-text);
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  box-sizing: border-box;
+}
+
+.evaluation-run-button {
+  margin-top: 10px;
+  width: 100%;
+}
+
+.evaluation-results {
+  margin-top: 22px;
+}
+
+.evaluation-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.evaluation-metric {
+  padding: 11px 12px;
+  border: 1px solid var(--cr-border);
+  border-radius: 10px;
+  background: var(--cr-surface-hover);
+}
+
+.evaluation-metric span,
+.evaluation-metric strong {
+  display: block;
+}
+
+.evaluation-metric span {
+  color: var(--cr-text-muted);
+  font-size: 11px;
+}
+
+.evaluation-metric strong {
+  margin-top: 4px;
+  font-size: 16px;
+}
+
+.evaluation-case {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--cr-border);
+  border-radius: 10px;
+}
+
+.evaluation-case-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.evaluation-case-header span,
+.evaluation-case-status {
+  color: var(--cr-text-muted);
+  font-size: 12px;
+}
+
+.evaluation-case p {
+  margin: 8px 0;
+  line-height: 1.45;
+}
+
+.evaluation-case details {
+  margin-top: 10px;
+}
+
+.evaluation-case summary {
+  cursor: pointer;
+  color: var(--cr-text);
+  font-size: 13px;
+}
+
+.evaluation-answer {
+  margin-top: 8px;
+  white-space: pre-wrap;
+  line-height: 1.55;
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .evaluation-metrics {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+.document-id {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.78rem;
+  opacity: 0.72;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
