@@ -53,14 +53,11 @@ from backend.models import (
     SearchResult,
     CompareRequest,
     CompareResponse,
-    EvaluationRunRequest,
-    EvaluationRunResponse,
     SessionResponse,
     UserResponse,
 )
 from backend.rag import RAGService
 from backend.comparison import DocumentComparisonService
-from backend.evaluation import RAGEvaluationService
 from backend.storage import DocumentStorage, StorageError
 from backend.repositories.chunks import ChunkRepository
 from backend.repositories.documents import DocumentRepository
@@ -77,8 +74,6 @@ from backend.security import (
     SEARCH_WINDOW,
     COMPARE_LIMIT,
     COMPARE_WINDOW,
-    EVALUATION_LIMIT,
-    EVALUATION_WINDOW,
     UPLOAD_LIMIT,
     UPLOAD_WINDOW,
     get_client_identifier,
@@ -92,7 +87,6 @@ document_repository = DocumentRepository()
 ingestion_service = IngestionService()
 rag_service = RAGService()
 comparison_service = DocumentComparisonService()
-evaluation_service = RAGEvaluationService()
 chat_repository = ChatRepository()
 user_repository = UserRepository()
 document_storage = DocumentStorage()
@@ -165,11 +159,6 @@ async def security_middleware(request, call_next):
         window = COMPARE_WINDOW
         key = f"compare:{client_id}"
         message = "Too many comparison requests. Please try again later."
-    elif path == "/evaluation/run":
-        limit = EVALUATION_LIMIT
-        window = EVALUATION_WINDOW
-        key = f"evaluation:{client_id}"
-        message = "Too many evaluation runs. Please try again later."
     elif path == "/search":
         limit = SEARCH_LIMIT
         window = SEARCH_WINDOW
@@ -799,21 +788,6 @@ def retry_document(
         error_message=updated[7],
         created_at=updated[8],
         updated_at=updated[9],
-    )
-
-
-@app.post(
-    "/evaluation/run",
-    response_model=EvaluationRunResponse,
-)
-def run_evaluation(
-    request: EvaluationRunRequest,
-    user_id: int = Depends(get_current_user_id),
-):
-    return evaluation_service.run(
-        cases=[case.model_dump() for case in request.cases],
-        user_id=user_id,
-        default_limit=request.limit,
     )
 
 

@@ -166,28 +166,3 @@ class CompareResponse(BaseModel):
     answer: str
     citations: list[CompareCitation]
     documents: list[dict]
-
-
-class EvaluationCase(BaseModel):
-    question: str = Field(min_length=1, max_length=2000)
-    expected_answer: str = Field(min_length=1, max_length=5000)
-    expected_document_ids: list[int] = Field(default_factory=list, max_length=20)
-    document_ids: list[int] = Field(default_factory=list, max_length=20)
-    limit: int = Field(default=5, ge=1, le=10)
-
-
-class EvaluationRunRequest(BaseModel):
-    cases: list[EvaluationCase] = Field(min_length=1, max_length=10)
-    limit: int = Field(default=5, ge=1, le=10)
-
-
-class EvaluationRunResponse(BaseModel):
-    cases: int
-    successful_cases: int
-    failed_cases: int
-    retrieval_hit_rate: float | None
-    reference_answer_coverage: float
-    exact_match_rate: float
-    average_latency_ms: float
-    p95_latency_ms: float
-    results: list[dict]

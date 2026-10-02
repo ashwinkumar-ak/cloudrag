@@ -11,7 +11,6 @@ import {
   streamAskQuestion,
   downloadDocument,
   compareDocuments,
-  runRAGEvaluation,
 } from "./api";
 
 function formatFileSize(bytes) {
@@ -91,20 +90,6 @@ const [comparisonOpen, setComparisonOpen] = useState(false);
 const [comparisonLoading, setComparisonLoading] = useState(false);
 const [comparisonResult, setComparisonResult] = useState(null);
 const [comparisonError, setComparisonError] = useState("");
-const [evaluationOpen, setEvaluationOpen] = useState(false);
-const [evaluationLoading, setEvaluationLoading] = useState(false);
-const [evaluationCases, setEvaluationCases] = useState(
-  JSON.stringify([
-    {
-      question: "What is the main purpose of this document?",
-      expected_answer: "Replace this with the expected answer.",
-      expected_document_ids: [],
-      document_ids: [],
-    },
-  ], null, 2)
-);
-const [evaluationResult, setEvaluationResult] = useState(null);
-const [evaluationError, setEvaluationError] = useState("");
 
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
@@ -611,29 +596,6 @@ async function askQuestion() {
   }
 }
 
- async function runRAGEvaluationSuite() {
-  setEvaluationLoading(true);
-  setEvaluationError("");
-  setEvaluationResult(null);
-
-  try {
-    const cases = JSON.parse(evaluationCases);
-    if (!Array.isArray(cases) || cases.length < 1 || cases.length > 10) {
-      throw new Error("Provide between 1 and 10 evaluation cases.");
-    }
-    const result = await runRAGEvaluation(cases, 5);
-    setEvaluationResult(result);
-  } catch (error) {
-    setEvaluationError(
-      error instanceof SyntaxError
-        ? "Evaluation cases must be valid JSON."
-        : error.message
-    );
-  } finally {
-    setEvaluationLoading(false);
-  }
-}
-
  async function runDocumentComparison() {
   if (selectedDocumentIds.length !== 2 || comparisonLoading) {
     return;
@@ -825,22 +787,11 @@ async function askQuestion() {
         }}
       >
         <div style={{ textAlign: "center" }}>
-          <div
-            style={{
-              width: 56,
-              height: 56,
-              borderRadius: 16,
-              display: "grid",
-              placeItems: "center",
-              margin: "0 auto 16px",
-              background: "#111827",
-              color: "white",
-              fontSize: 24,
-              fontWeight: 700,
-            }}
-          >
-            C
-          </div>
+          <img
+            className="auth-brand-mark"
+            src="/icon-192.png"
+            alt="CloudRAG"
+          />
           <strong style={{ fontSize: 18 }}>CloudRAG</strong>
           <div style={{ marginTop: 8, color: "#6b7280" }}>Loading...</div>
         </div>
@@ -850,62 +801,20 @@ async function askQuestion() {
 
   if (!user) {
     return (
-      <main
-        style={{
-          minHeight: "100vh",
-          display: "grid",
-          placeItems: "center",
-          padding: 24,
-          background: "#f7f8fa",
-          color: "#1f2937",
-          fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
-        }}
-      >
-        <section
-          style={{
-            width: "min(420px, 100%)",
-            background: "white",
-            border: "1px solid #e5e7eb",
-            borderRadius: 20,
-            padding: 32,
-            boxShadow: "0 18px 50px rgba(15, 23, 42, 0.08)",
-          }}
-        >
-          <div style={{ textAlign: "center", marginBottom: 28 }}>
-            <div
-              style={{
-                width: 56,
-                height: 56,
-                borderRadius: 16,
-                display: "grid",
-                placeItems: "center",
-                margin: "0 auto 14px",
-                background: "#111827",
-                color: "white",
-                fontSize: 24,
-                fontWeight: 700,
-              }}
-            >
-              C
-            </div>
-            <h1 style={{ margin: 0, fontSize: 26 }}>CloudRAG</h1>
-            <p style={{ margin: "8px 0 0", color: "#6b7280" }}>
-              Document Intelligence
-            </p>
+      <main className="auth-shell">
+        <section className="auth-card">
+          <div className="auth-header">
+            <img
+              className="auth-brand-mark"
+              src="/icon-192.png"
+              alt="CloudRAG"
+            />
+            <h1 className="auth-title">CloudRAG</h1>
+            <p className="auth-subtitle">Document Intelligence</p>
           </div>
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 8,
-              padding: 4,
-              background: "#f3f4f6",
-              borderRadius: 10,
-              marginBottom: 22,
-            }}
-          >
-            {[["login", "Sign in"], ["register", "Create account"]].map(
+          <div className="auth-mode-switch">
+            {[['login', 'Sign in'], ['register', 'Create account']].map(
               ([mode, label]) => (
                 <button
                   key={mode}
@@ -914,19 +823,9 @@ async function askQuestion() {
                     setAuthMode(mode);
                     setAuthError("");
                   }}
-                  style={{
-                    border: 0,
-                    borderRadius: 8,
-                    padding: "10px 8px",
-                    background: authMode === mode ? "white" : "transparent",
-                    color: authMode === mode ? "#111827" : "#6b7280",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    boxShadow:
-                      authMode === mode
-                        ? "0 1px 3px rgba(0,0,0,.08)"
-                        : "none",
-                  }}
+                  className={`auth-mode-button ${
+                    authMode === mode ? "active" : ""
+                  }`}
                 >
                   {label}
                 </button>
@@ -934,48 +833,22 @@ async function askQuestion() {
             )}
           </div>
 
-          <form onSubmit={handleAuthSubmit}>
-            <label style={{ display: "block", marginBottom: 16 }}>
-              <span
-                style={{
-                  display: "block",
-                  marginBottom: 7,
-                  fontSize: 13,
-                  fontWeight: 600,
-                }}
-              >
-                Email
-              </span>
+          <form onSubmit={handleAuthSubmit} className="auth-form">
+            <label className="auth-field">
+              <span className="auth-label">Email</span>
               <input
                 type="email"
                 value={authEmail}
                 onChange={(event) => setAuthEmail(event.target.value)}
                 autoComplete="email"
                 placeholder="you@example.com"
-                style={{
-                  width: "100%",
-                  boxSizing: "border-box",
-                  border: "1px solid #d1d5db",
-                  borderRadius: 10,
-                  padding: "12px 13px",
-                  fontSize: 14,
-                  outline: "none",
-                }}
+                className="auth-input"
                 required
               />
             </label>
 
-            <label style={{ display: "block", marginBottom: 16 }}>
-              <span
-                style={{
-                  display: "block",
-                  marginBottom: 7,
-                  fontSize: 13,
-                  fontWeight: 600,
-                }}
-              >
-                Password
-              </span>
+            <label className="auth-field">
+              <span className="auth-label">Password</span>
               <input
                 type="password"
                 value={authPassword}
@@ -983,31 +856,13 @@ async function askQuestion() {
                 autoComplete={authMode === "login" ? "current-password" : "new-password"}
                 placeholder="At least 8 characters"
                 minLength={authMode === "register" ? 8 : 1}
-                style={{
-                  width: "100%",
-                  boxSizing: "border-box",
-                  border: "1px solid #d1d5db",
-                  borderRadius: 10,
-                  padding: "12px 13px",
-                  fontSize: 14,
-                  outline: "none",
-                }}
+                className="auth-input"
                 required
               />
             </label>
 
             {authError && (
-              <div
-                style={{
-                  marginBottom: 16,
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  background: "#fef2f2",
-                  border: "1px solid #fecaca",
-                  color: "#b91c1c",
-                  fontSize: 13,
-                }}
-              >
+              <div className="auth-error">
                 {authError}
               </div>
             )}
@@ -1015,17 +870,7 @@ async function askQuestion() {
             <button
               type="submit"
               disabled={authSubmitting}
-              style={{
-                width: "100%",
-                border: 0,
-                borderRadius: 10,
-                padding: "13px 16px",
-                background: "#111827",
-                color: "white",
-                fontWeight: 700,
-                cursor: authSubmitting ? "wait" : "pointer",
-                opacity: authSubmitting ? 0.7 : 1,
-              }}
+              className="auth-submit"
             >
               {authSubmitting
                 ? authMode === "login"
@@ -1062,7 +907,11 @@ async function askQuestion() {
         }`}
       >
         <div className="sidebar-brand">
-          <div className="brand-mark">C</div>
+          <img
+            className="brand-mark"
+            src="/icon-192.png"
+            alt="CloudRAG"
+          />
 
           <div>
             <div className="brand-name">CloudRAG</div>
@@ -1164,19 +1013,6 @@ async function askQuestion() {
               }`}
             />
           </button>
-          <button
-            className={`sidebar-tool ${evaluationOpen ? "selected" : ""}`}
-            onClick={() => {
-              setEvaluationOpen((current) => !current);
-              setKnowledgeOpen(false);
-              setSystemOpen(false);
-              setMobileSidebarOpen(false);
-            }}
-          >
-            <span>◇</span>
-            RAG evaluation
-          </button>
-
           <button
             className="sidebar-tool theme-toggle"
             onClick={() =>
@@ -1801,7 +1637,7 @@ async function askQuestion() {
                       </strong>
 
                       <span>
-                        #{document.id} · {formatFileSize(
+                        {formatFileSize(
                           document.file_size
                         )}{" "}
                         · {document.status}
@@ -1933,71 +1769,6 @@ async function askQuestion() {
                 </div>
               )}
             </div>
-          </div>
-        </aside>
-      )}
-
-      {evaluationOpen && (
-        <aside className="side-panel evaluation-panel">
-          <div className="side-panel-header">
-            <div>
-              <h2>RAG evaluation</h2>
-              <p>Run up to 10 reference questions against the current RAG pipeline.</p>
-            </div>
-            <button className="panel-close" onClick={() => setEvaluationOpen(false)}>×</button>
-          </div>
-
-          <div className="panel-body">
-            <div className="evaluation-note">
-              <strong>What is measured</strong>
-              <span>Retrieval hit rate, reference-answer token coverage, exact match, and latency.</span>
-              <small>No LLM judge is used, so this adds no separate evaluation-model calls.</small>
-            </div>
-
-            <label className="evaluation-label">Evaluation cases (JSON)</label>
-            <textarea
-              className="evaluation-textarea"
-              value={evaluationCases}
-              onChange={(event) => setEvaluationCases(event.target.value)}
-              spellCheck={false}
-            />
-
-            {evaluationError && <div className="panel-error">{evaluationError}</div>}
-
-            <button
-              className="upload-button"
-              type="button"
-              onClick={runRAGEvaluationSuite}
-              disabled={evaluationLoading}
-            >
-              {evaluationLoading ? "Running evaluation..." : "Run evaluation"}
-            </button>
-
-            {evaluationResult && (
-              <div className="evaluation-results">
-                <div className="evaluation-metrics">
-                  <div><strong>{evaluationResult.cases}</strong><span>Cases</span></div>
-                  <div><strong>{evaluationResult.retrieval_hit_rate == null ? "—" : `${Math.round(evaluationResult.retrieval_hit_rate * 100)}%`}</strong><span>Retrieval hit</span></div>
-                  <div><strong>{Math.round(evaluationResult.reference_answer_coverage * 100)}%</strong><span>Answer coverage</span></div>
-                  <div><strong>{Math.round(evaluationResult.average_latency_ms)} ms</strong><span>Avg latency</span></div>
-                </div>
-
-                {evaluationResult.results.map((item) => (
-                  <div className="evaluation-case-result" key={item.case_number}>
-                    <strong>Case {item.case_number}</strong>
-                    <span>{item.question}</span>
-                    {item.error ? (
-                      <small className="document-error">{item.error}</small>
-                    ) : (
-                      <>
-                        <small>Retrieval: {item.expected_document_ids.length ? (item.retrieval_hit ? "hit" : "miss") : "not measured"} · Coverage: {Math.round(item.answer_coverage * 100)}% · {Math.round(item.latency_ms)} ms</small>
-                        <p>{item.generated_answer}</p>
-                      </>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         </aside>
       )}
