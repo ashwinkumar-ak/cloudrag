@@ -3820,3 +3820,12 @@ input {
     grid-template-columns: 1fr;
   }
 }
+
+
+.document-id {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.78rem;
+  opacity: 0.72;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}

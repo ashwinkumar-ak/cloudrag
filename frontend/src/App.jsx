@@ -1719,6 +1719,9 @@ async function askQuestion() {
                       <strong title={document.filename}>
                         {document.filename}
                       </strong>
+                      <span className="document-id">
+                        Document ID: {document.id}
+                      </span>
 
                       <span>
                         {formatFileSize(
