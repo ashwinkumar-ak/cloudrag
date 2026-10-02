@@ -1,7 +1,7 @@
 import csv
 import re
 from datetime import date, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from io import BytesIO, StringIO
 from pathlib import Path
 
@@ -41,19 +41,30 @@ def format_excel_value(value, number_format: str | None = None) -> str:
 
         if "$" in fmt or "[$$" in fmt:
             decimals = _decimal_places(fmt)
-            return f"${float(value):,.{decimals}f}"
+            decimal_value = Decimal(str(value))
+            rounded = decimal_value.quantize(
+                Decimal("1").scaleb(-decimals),
+                rounding=ROUND_HALF_UP,
+            )
+            return f"${rounded:,.{decimals}f}"
 
         if "%" in fmt:
             decimals = _decimal_places(fmt)
-            return f"{float(value) * 100:.{decimals}f}%"
+            decimal_value = Decimal(str(value)) * Decimal("100")
+            rounded = decimal_value.quantize(
+                Decimal("1").scaleb(-decimals),
+                rounding=ROUND_HALF_UP,
+            )
+            return f"{rounded:.{decimals}f}%"
 
         if any(symbol in fmt_upper for symbol in ("DD", "MM", "YY")) and isinstance(value, (datetime, date)):
             return str(value)
 
         if isinstance(value, float):
-            if value.is_integer():
-                return str(int(value))
-            return f"{value:,.10f}".rstrip("0").rstrip(".")
+            decimal_value = Decimal(str(value))
+            if decimal_value == decimal_value.to_integral_value():
+                return str(decimal_value.to_integral_value())
+            return f"{decimal_value:,.10f}".rstrip("0").rstrip(".")
 
         return str(value)
 
