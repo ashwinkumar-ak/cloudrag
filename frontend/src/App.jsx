@@ -616,6 +616,55 @@ async function askQuestion() {
   }
 }
 
+ async function runRAGEvaluation() {
+  if (evaluationLoading) {
+    return;
+  }
+
+  setEvaluationLoading(true);
+  setEvaluationError("");
+  setEvaluationResult(null);
+
+  try {
+    let parsedCases;
+
+    try {
+      parsedCases = JSON.parse(evaluationCases);
+    } catch {
+      throw new Error("Evaluation cases must contain valid JSON.");
+    }
+
+    if (!Array.isArray(parsedCases)) {
+      throw new Error("Evaluation cases must be a JSON array.");
+    }
+
+    if (parsedCases.length < 1 || parsedCases.length > 10) {
+      throw new Error("Provide between 1 and 10 evaluation cases.");
+    }
+
+    for (const [index, item] of parsedCases.entries()) {
+      if (!item || typeof item !== "object") {
+        throw new Error(`Case ${index + 1} must be a JSON object.`);
+      }
+
+      if (!String(item.question || "").trim()) {
+        throw new Error(`Case ${index + 1} is missing a question.`);
+      }
+
+      if (!String(item.expected_answer || "").trim()) {
+        throw new Error(`Case ${index + 1} is missing expected_answer.`);
+      }
+    }
+
+    const result = await runEvaluation(parsedCases, 5);
+    setEvaluationResult(result);
+  } catch (error) {
+    setEvaluationError(error.message || "Evaluation failed.");
+  } finally {
+    setEvaluationLoading(false);
+  }
+}
+
  async function runDocumentComparison() {
   if (selectedDocumentIds.length !== 2 || comparisonLoading) {
     return;
