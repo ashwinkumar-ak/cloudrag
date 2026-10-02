@@ -9,6 +9,9 @@ class Document(BaseModel):
     content_type: str
     file_size: int
     status: str
+    processing_stage: str
+    processing_progress: int
+    error_message: str | None = None
     created_at: datetime
     updated_at: datetime
 

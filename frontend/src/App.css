@@ -3113,3 +3113,67 @@ input {
     max-width: 95px;
   }
 }
+/* =========================================================
+   DOCUMENT PROCESSING STATUS
+   ========================================================= */
+
+.document-progress {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 6px;
+  min-width: 0;
+}
+
+.document-progress-track {
+  flex: 1;
+  min-width: 40px;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--cr-border);
+}
+
+.document-progress-bar {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--cr-text);
+  transition: width 220ms ease;
+}
+
+.document-progress small {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: var(--cr-muted);
+}
+
+.document-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  min-width: 0;
+}
+
+.document-error small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--cr-danger, #b42318);
+}
+
+.document-retry-button {
+  flex: 0 0 auto;
+  border: 1px solid var(--cr-border);
+  border-radius: 7px;
+  background: var(--cr-surface);
+  color: var(--cr-text);
+  padding: 4px 8px;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.document-retry-button:hover {
+  background: var(--cr-surface-hover);
+}

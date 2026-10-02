@@ -32,8 +32,6 @@ class IngestionService:
         if not text.strip():
             raise ValueError("Document text must not be empty")
 
-        start = time.perf_counter()
-
         document_id = self.document_repository.create_document(
             user_id=user_id,
             filename=filename,
@@ -46,15 +44,57 @@ class IngestionService:
             storage_path=storage_path,
         )
 
-        self.document_repository.update_status(
+        self.process_document(
+            document_id=document_id,
+            text=text,
+        )
+        return document_id
+
+    def process_document(
+        self,
+        document_id: int,
+        text: str,
+    ) -> None:
+        if not text.strip():
+            raise ValueError("Document text must not be empty")
+
+        start = time.perf_counter()
+
+        self.document_repository.update_progress(
             document_id,
-            "processing",
+            status="processing",
+            stage="parsing",
+            progress=10,
+            error_message=None,
         )
 
         try:
+            self.document_repository.update_progress(
+                document_id,
+                status="processing",
+                stage="chunking",
+                progress=25,
+                error_message=None,
+            )
+
             chunks = self.chunker.split(text)
 
+            if not chunks:
+                raise ValueError("No usable text chunks were created.")
+
+            self.chunk_repository.delete_document_chunks(document_id)
+
+            total_chunks = len(chunks)
+
             for index, chunk in enumerate(chunks):
+                self.document_repository.update_progress(
+                    document_id,
+                    status="processing",
+                    stage="embedding",
+                    progress=25 + int(((index) / total_chunks) * 65),
+                    error_message=None,
+                )
+
                 embedding = self.embedding_service.embed(chunk)
 
                 self.chunk_repository.create_chunk(
@@ -64,19 +104,24 @@ class IngestionService:
                     embedding=embedding,
                 )
 
-            self.document_repository.update_status(
+            self.document_repository.update_progress(
                 document_id,
-                "completed",
+                status="completed",
+                stage="completed",
+                progress=100,
+                error_message=None,
             )
 
             DOCUMENT_INGESTION_COUNT.inc()
 
-            return document_id
-
-        except Exception:
-            self.document_repository.update_status(
+        except Exception as exc:
+            message = str(exc).strip() or "Document processing failed."
+            self.document_repository.update_progress(
                 document_id,
-                "failed",
+                status="failed",
+                stage="failed",
+                progress=0,
+                error_message=message[:1000],
             )
             raise
 

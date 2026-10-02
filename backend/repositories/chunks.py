@@ -6,6 +6,15 @@ from backend.config import settings
 
 
 class ChunkRepository:
+    def delete_document_chunks(self, document_id: int) -> None:
+        with psycopg.connect(settings.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM chunks WHERE document_id = %s",
+                    (document_id,),
+                )
+            connection.commit()
+
     def create_chunk(
         self,
         document_id: int,

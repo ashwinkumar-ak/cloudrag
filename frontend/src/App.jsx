@@ -323,7 +323,7 @@ async function uploadDocument() {
     });
 
     setUploadStatus(
-      `${data.filename} uploaded successfully.`
+      `${data.filename} queued for processing.`
     );
 
     setFile(null);
@@ -342,6 +342,18 @@ async function uploadDocument() {
     setUploading(false);
   }
 }
+
+
+  async function retryDocument(documentId) {
+    try {
+      await apiFetch(`/documents/${documentId}/retry`, {
+        method: "POST",
+      });
+      await loadDocuments();
+    } catch (error) {
+      window.alert(`Retry failed: ${error.message}`);
+    }
+  }
 
   async function handleDownloadDocument(documentId) {
     try {
@@ -610,6 +622,26 @@ async function askQuestion() {
 
     return () => clearInterval(interval);
   }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      return undefined;
+    }
+
+    const hasProcessingDocuments = documents.some(
+      (document) =>
+        document.status === "pending" ||
+        document.status === "processing"
+    );
+
+    if (!hasProcessingDocuments) {
+      return undefined;
+    }
+
+    const interval = setInterval(loadDocuments, 2000);
+
+    return () => clearInterval(interval);
+  }, [user, documents]);
 
 
   useEffect(() => {
@@ -1464,7 +1496,42 @@ async function askQuestion() {
                           document.file_size
                         )}{" "}
                         · {document.status}
+                        {document.processing_stage &&
+                          document.status !== "completed" &&
+                          ` · ${document.processing_stage}`}
                       </span>
+
+                      {(document.status === "pending" ||
+                        document.status === "processing") && (
+                        <div className="document-progress">
+                          <div className="document-progress-track">
+                            <div
+                              className="document-progress-bar"
+                              style={{
+                                width: `${document.processing_progress || 0}%`,
+                              }}
+                            />
+                          </div>
+                          <small>
+                            {document.processing_progress || 0}%
+                          </small>
+                        </div>
+                      )}
+
+                      {document.status === "failed" && (
+                        <div className="document-error">
+                          <small title={document.error_message || "Processing failed."}>
+                            {document.error_message || "Processing failed."}
+                          </small>
+                          <button
+                            type="button"
+                            className="document-retry-button"
+                            onClick={() => retryDocument(document.id)}
+                          >
+                            Retry
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     <button

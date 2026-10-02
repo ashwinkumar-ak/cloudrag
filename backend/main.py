@@ -4,6 +4,7 @@ from uuid import uuid4
 from urllib.parse import quote
 
 from fastapi import (
+    BackgroundTasks,
     Depends,
     FastAPI,
     File,
@@ -282,6 +283,56 @@ def get_current_user(
 
 
 # ---------------------------------------------------------------------------
+# Background document processing
+# ---------------------------------------------------------------------------
+
+
+def process_uploaded_document(
+    document_id: int,
+    storage_path: str,
+    filename: str,
+    content_type: str,
+) -> None:
+    try:
+        document_repository.update_progress(
+            document_id=document_id,
+            status="processing",
+            stage="parsing",
+            progress=10,
+            error_message=None,
+        )
+
+        document_storage_content = document_storage.download(storage_path)
+
+        text = extract_text(
+            filename=filename,
+            content=document_storage_content,
+        )
+
+        if not text.strip():
+            raise DocumentParseError(
+                "No readable text was found in the document."
+            )
+
+        ingestion_service.process_document(
+            document_id=document_id,
+            text=text,
+        )
+    except Exception as exc:
+        message = str(exc).strip() or "Document processing failed."
+        try:
+            document_repository.update_progress(
+                document_id=document_id,
+                status="failed",
+                stage="failed",
+                progress=0,
+                error_message=message[:1000],
+            )
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------------
 # Documents
 # ---------------------------------------------------------------------------
 
@@ -304,8 +355,11 @@ def list_documents(
             content_type=row[2],
             file_size=row[3],
             status=row[4],
-            created_at=row[5],
-            updated_at=row[6],
+            processing_stage=row[5],
+            processing_progress=row[6],
+            error_message=row[7],
+            created_at=row[8],
+            updated_at=row[9],
         )
         for row in rows
     ]
@@ -336,8 +390,11 @@ def get_document(
         content_type=row[2],
         file_size=row[3],
         status=row[4],
-        created_at=row[5],
-        updated_at=row[6],
+        processing_stage=row[5],
+        processing_progress=row[6],
+        error_message=row[7],
+        created_at=row[8],
+        updated_at=row[9],
     )
 
 
@@ -432,8 +489,10 @@ def download_document(
 
 @app.post(
     "/documents",
+    status_code=202,
 )
 async def upload_document(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     user_id: int = Depends(get_current_user_id),
 ):
@@ -450,25 +509,6 @@ async def upload_document(
         raise HTTPException(
             status_code=400,
             detail="Document must not be empty",
-        )
-
-    try:
-        text = extract_text(
-            filename=filename,
-            content=content,
-        )
-    except DocumentParseError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=str(exc),
-        ) from exc
-
-    if not text.strip():
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "No readable text was found in the document."
-            ),
         )
 
     content_type = (
@@ -494,13 +534,20 @@ async def upload_document(
         ) from exc
 
     try:
-        document_id = ingestion_service.ingest_text(
+        document_id = document_repository.create_document(
             user_id=user_id,
             filename=filename,
             content_type=content_type,
-            text=text,
             file_size=len(content),
             storage_path=storage_path,
+        )
+
+        background_tasks.add_task(
+            process_uploaded_document,
+            document_id,
+            storage_path,
+            filename,
+            content_type,
         )
     except Exception as exc:
         try:
@@ -510,15 +557,90 @@ async def upload_document(
 
         raise HTTPException(
             status_code=500,
-            detail=f"Document ingestion failed: {exc}",
+            detail="Document could not be queued for processing.",
         ) from exc
 
     return {
         "document_id": document_id,
         "filename": filename,
-        "status": "completed",
+        "status": "pending",
+        "processing_stage": "pending",
+        "processing_progress": 0,
         "storage": "stored",
     }
+
+
+@app.post(
+    "/documents/{document_id}/retry",
+    response_model=Document,
+    status_code=202,
+)
+def retry_document(
+    document_id: int,
+    background_tasks: BackgroundTasks,
+    user_id: int = Depends(get_current_user_id),
+):
+    row = document_repository.get_document(
+        document_id=document_id,
+        user_id=user_id,
+    )
+
+    if not row:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found",
+        )
+
+    if row[4] != "failed":
+        raise HTTPException(
+            status_code=409,
+            detail="Only failed documents can be retried.",
+        )
+
+    storage_path = document_repository.get_storage_path(
+        document_id=document_id,
+        user_id=user_id,
+    )
+
+    if not storage_path:
+        raise HTTPException(
+            status_code=404,
+            detail="Original document file is not available.",
+        )
+
+    document_repository.update_progress(
+        document_id=document_id,
+        status="pending",
+        stage="pending",
+        progress=0,
+        error_message=None,
+    )
+
+    background_tasks.add_task(
+        process_uploaded_document,
+        document_id,
+        storage_path,
+        row[1],
+        row[2],
+    )
+
+    updated = document_repository.get_document(
+        document_id=document_id,
+        user_id=user_id,
+    )
+
+    return Document(
+        id=updated[0],
+        filename=updated[1],
+        content_type=updated[2],
+        file_size=updated[3],
+        status=updated[4],
+        processing_stage=updated[5],
+        processing_progress=updated[6],
+        error_message=updated[7],
+        created_at=updated[8],
+        updated_at=updated[9],
+    )
 
 
 # ---------------------------------------------------------------------------

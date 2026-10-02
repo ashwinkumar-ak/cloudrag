@@ -813,3 +813,14 @@ GET /documents/{document_id}/download
 Each stored object uses a user-scoped path, and document deletion removes both the database record and the stored original file.
 
 For local development, `STORAGE_BACKEND=local` stores originals under the configured local storage directory. The cloud deployment uses `STORAGE_BACKEND=supabase` with Supabase Storage.
+
+## Document Processing Lifecycle
+
+Document uploads are queued for background processing rather than blocking the upload request until parsing and embedding finish. Each document exposes processing state and progress through the API and UI:
+
+```text
+Pending → Parsing → Chunking → Embedding → Completed
+                                      └────→ Failed
+```
+
+Failed documents retain their original stored file and can be retried from the Knowledge Base.
