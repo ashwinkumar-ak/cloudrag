@@ -570,8 +570,11 @@ async function askQuestion() {
       )
     );
 
+    // Keep the streamed UI in place. The complete assistant response has
+    // already been persisted by the streaming endpoint, so reloading the
+    // entire session here would briefly replace the chat with the loading
+    // state and make the page appear to refresh.
     setCurrentSessionId(streamedSessionId);
-    await loadSession(streamedSessionId);
     await refreshSessionList(streamedSessionId);
   } catch (error) {
     setSessionMessages((current) =>
