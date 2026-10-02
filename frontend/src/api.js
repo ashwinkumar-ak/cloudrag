@@ -204,6 +204,107 @@ export async function searchDocuments(
   });
 }
 
+export async function streamAskQuestion(
+  question,
+  limit = 3,
+  documentIds = [],
+  sessionId = null,
+  onEvent
+) {
+  const token = getToken();
+
+  const response = await fetch(`${API_URL}/ask/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token
+        ? { Authorization: `Bearer ${token}` }
+        : {}),
+    },
+    body: JSON.stringify({
+      question,
+      limit,
+      document_ids: documentIds,
+      session_id: sessionId,
+    }),
+  });
+
+  if (!response.ok) {
+    let message = `Request failed with status ${response.status}.`;
+
+    try {
+      const data = await response.json();
+      if (data?.detail) {
+        message = data.detail;
+      }
+    } catch {
+      // Keep the generic error.
+    }
+
+    if (response.status === 401) {
+      clearToken();
+      window.dispatchEvent(new Event("cloudrag-auth-expired"));
+    }
+
+    throw new Error(message);
+  }
+
+  if (!response.body) {
+    throw new Error("Streaming is not supported by this browser.");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  function processEvent(rawEvent) {
+    const lines = rawEvent.split("\n");
+    let eventName = "message";
+    let data = "";
+
+    for (const line of lines) {
+      if (line.startsWith("event:")) {
+        eventName = line.slice(6).trim();
+      } else if (line.startsWith("data:")) {
+        data += line.slice(5).trim();
+      }
+    }
+
+    if (!data) {
+      return;
+    }
+
+    try {
+      onEvent(eventName, JSON.parse(data));
+    } catch {
+      // Ignore malformed SSE events.
+    }
+  }
+
+  while (true) {
+    const { value, done } = await reader.read();
+
+    buffer += decoder.decode(value || new Uint8Array(), {
+      stream: !done,
+    });
+
+    const events = buffer.split("\n\n");
+    buffer = events.pop() || "";
+
+    for (const event of events) {
+      processEvent(event);
+    }
+
+    if (done) {
+      break;
+    }
+  }
+
+  if (buffer.trim()) {
+    processEvent(buffer);
+  }
+}
+
 export async function askQuestion(
   question,
   limit = 3,

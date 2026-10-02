@@ -8,6 +8,7 @@ import {
   getStoredToken,
   saveToken,
   getHealth,
+  streamAskQuestion,
   downloadDocument,
 } from "./api";
 
@@ -488,9 +489,20 @@ async function askQuestion() {
     temporary: true,
   };
 
+  const temporaryAssistantMessage = {
+    id: `temp-assistant-${Date.now()}`,
+    role: "assistant",
+    content: "",
+    citations: [],
+    created_at: new Date().toISOString(),
+    temporary: true,
+    streaming: true,
+  };
+
   setSessionMessages((current) => [
     ...current,
     temporaryUserMessage,
+    temporaryAssistantMessage,
   ]);
 
   setQuestion("");
@@ -498,25 +510,75 @@ async function askQuestion() {
   setAsking(true);
 
   try {
-    const data = await apiFetch("/ask", {
-      method: "POST",
-      body: JSON.stringify({
-        question: trimmedQuestion,
-        limit: 3,
-        document_ids: selectedDocumentIds,
-        session_id: sessionId,
-      }),
-    });
+    let streamedSessionId = sessionId;
+    let streamedCitations = [];
 
-    setCurrentSessionId(data.session_id);
+    await streamAskQuestion(
+      trimmedQuestion,
+      3,
+      selectedDocumentIds,
+      sessionId,
+      (eventName, data) => {
+        if (eventName === "meta") {
+          streamedSessionId = data.session_id || streamedSessionId;
+          streamedCitations = data.citations || [];
 
-    await loadSession(data.session_id);
-    await refreshSessionList(data.session_id);
+          setCurrentSessionId(streamedSessionId);
+
+          setSessionMessages((current) =>
+            current.map((message) =>
+              message.id === temporaryAssistantMessage.id
+                ? {
+                    ...message,
+                    citations: streamedCitations,
+                  }
+                : message
+            )
+          );
+          return;
+        }
+
+        if (eventName === "token") {
+          setSessionMessages((current) =>
+            current.map((message) =>
+              message.id === temporaryAssistantMessage.id
+                ? {
+                    ...message,
+                    content: `${message.content || ""}${data.text || ""}`,
+                  }
+                : message
+            )
+          );
+          return;
+        }
+
+        if (eventName === "error") {
+          throw new Error(
+            data.detail || "The streamed response failed."
+          );
+        }
+      }
+    );
+
+    setSessionMessages((current) =>
+      current.map((message) =>
+        message.id === temporaryAssistantMessage.id
+          ? { ...message, streaming: false, temporary: false }
+          : message.id === temporaryUserMessage.id
+            ? { ...message, temporary: false }
+            : message
+      )
+    );
+
+    setCurrentSessionId(streamedSessionId);
+    await loadSession(streamedSessionId);
+    await refreshSessionList(streamedSessionId);
   } catch (error) {
     setSessionMessages((current) =>
       current.filter(
         (message) =>
-          message.id !== temporaryUserMessage.id
+          message.id !== temporaryUserMessage.id &&
+          message.id !== temporaryAssistantMessage.id
       )
     );
 
@@ -1254,6 +1316,9 @@ async function askQuestion() {
 
                       <div className="message-text">
                         {message.content}
+                        {message.streaming && (
+                          <span className="streaming-cursor" />
+                        )}
                       </div>
 
                       {message.role === "assistant" &&
@@ -1296,26 +1361,6 @@ async function askQuestion() {
                     </div>
                   </article>
                 ))}
-
-                {asking && (
-                  <article className="message assistant-message">
-                    <div className="message-avatar">
-                      C
-                    </div>
-
-                    <div className="message-body">
-                      <div className="message-role">
-                        CloudRAG
-                      </div>
-
-                      <div className="typing-indicator">
-                        <span />
-                        <span />
-                        <span />
-                      </div>
-                    </div>
-                  </article>
-                )}
 
                 {askError && (
                   <div className="chat-error">

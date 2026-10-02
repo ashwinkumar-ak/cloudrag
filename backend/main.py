@@ -14,8 +14,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi import Response
-from fastapi.responses import JSONResponse
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST
 
 from backend.auth import (
@@ -122,7 +121,7 @@ async def security_middleware(request, call_next):
         window = AUTH_WINDOW
         key = f"auth:{client_id}"
         message = "Too many authentication attempts. Please try again later."
-    elif path == "/ask":
+    elif path in {"/ask", "/ask/stream"}:
         limit = ASK_LIMIT
         window = ASK_WINDOW
         key = f"ask:{client_id}"
@@ -912,6 +911,133 @@ def ask(
     finally:
         duration = time.perf_counter() - start
         RAG_REQUEST_LATENCY.observe(duration)
+
+
+@app.post("/ask/stream")
+def ask_stream(
+    request: AskRequest,
+    user_id: int = Depends(get_current_user_id),
+):
+    """Stream an answer as Server-Sent Events (SSE)."""
+    start = time.perf_counter()
+    RAG_REQUEST_COUNT.inc()
+
+    session_id = request.session_id
+
+    if session_id is not None:
+        existing_session = chat_repository.get_session(
+            session_id=session_id,
+            user_id=user_id,
+        )
+
+        if not existing_session:
+            raise HTTPException(
+                status_code=404,
+                detail="Session not found",
+            )
+
+    try:
+        context, answer_chunks = rag_service.answer_stream(
+            question=request.question,
+            user_id=user_id,
+            limit=request.limit,
+            document_ids=request.document_ids or None,
+            session_id=session_id,
+        )
+    except LLMGenerationError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        ) from exc
+
+    if session_id is None:
+        session_id = chat_repository.create_session(
+            user_id=user_id,
+            title=generate_session_title(request.question),
+        )
+
+    session = chat_repository.get_session(
+        session_id=session_id,
+        user_id=user_id,
+    )
+
+    if not session:
+        raise HTTPException(
+            status_code=404,
+            detail="Session not found",
+        )
+
+    if session[1] == "New Chat":
+        chat_repository.update_title(
+            session_id=session_id,
+            user_id=user_id,
+            title=generate_session_title(request.question),
+        )
+
+    chat_repository.add_message(
+        session_id=session_id,
+        user_id=user_id,
+        role="user",
+        content=request.question,
+    )
+
+    def event_stream():
+        answer_parts = []
+
+        import json
+
+        yield (
+            "event: meta\n"
+            f"data: {json.dumps({'session_id': session_id, 'citations': context})}\n\n"
+        )
+
+        try:
+            for chunk in answer_chunks:
+                if not chunk:
+                    continue
+                answer_parts.append(chunk)
+                yield (
+                    "event: token\n"
+                    f"data: {json.dumps({'text': chunk})}\n\n"
+                )
+
+            answer = "".join(answer_parts).strip()
+
+            if not answer:
+                raise LLMGenerationError(
+                    "The language model returned an empty answer."
+                )
+
+            chat_repository.add_message(
+                session_id=session_id,
+                user_id=user_id,
+                role="assistant",
+                content=answer,
+                citations=context,
+            )
+
+            yield (
+                "event: done\n"
+                f"data: {json.dumps({'session_id': session_id})}\n\n"
+            )
+        except Exception as exc:
+            yield (
+                "event: error\n"
+                f"data: {json.dumps({'detail': str(exc)})}\n\n"
+            )
+        finally:
+            duration = time.perf_counter() - start
+            RAG_REQUEST_LATENCY.observe(duration)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ---------------------------------------------------------------------------

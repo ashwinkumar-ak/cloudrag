@@ -824,3 +824,8 @@ Pending → Parsing → Chunking → Embedding → Completed
 ```
 
 Failed documents retain their original stored file and can be retried from the Knowledge Base.
+
+
+### Streaming responses
+
+Cloud chat supports Server-Sent Events (SSE) for assistant responses. The frontend progressively renders Gemini output while the backend preserves the final answer and citations in the existing chat history.

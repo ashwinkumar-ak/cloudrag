@@ -132,6 +132,110 @@ class LLMService:
             duration = time.perf_counter() - start
             LLM_LATENCY.observe(duration)
 
+
+    def generate_stream(self, prompt: str):
+        """Yield plain-text Gemini response chunks as they arrive."""
+        if not self.api_key:
+            raise RuntimeError(
+                "GEMINI_API_KEY is not configured."
+            )
+
+        start = time.perf_counter()
+        response = None
+
+        try:
+            try:
+                response = requests.post(
+                    f"{self.base_url}/models/"
+                    f"{self.model}:streamGenerateContent?alt=sse",
+                    headers={
+                        "Content-Type": "application/json",
+                        "x-goog-api-key": self.api_key,
+                    },
+                    json={
+                        "contents": [
+                            {
+                                "parts": [
+                                    {"text": prompt}
+                                ]
+                            }
+                        ],
+                        "generationConfig": {
+                            "temperature": 0,
+                            "maxOutputTokens": 180,
+                        },
+                    },
+                    timeout=120,
+                    stream=True,
+                )
+                response.raise_for_status()
+            except requests.RequestException as exc:
+                if isinstance(exc, requests.HTTPError) and exc.response is not None:
+                    status_code = exc.response.status_code
+                    try:
+                        error_data = exc.response.json()
+                        error_message = (
+                            error_data.get("error", {}).get("message")
+                            or "Unknown Gemini API error."
+                        )
+                    except ValueError:
+                        error_message = "Unknown Gemini API error."
+
+                    raise LLMGenerationError(
+                        f"Gemini API error ({status_code}): "
+                        f"{error_message}"
+                    ) from exc
+
+                raise LLMGenerationError(
+                    "The cloud language model could not "
+                    "generate a response."
+                ) from exc
+
+            for raw_line in response.iter_lines(decode_unicode=True):
+                if not raw_line:
+                    continue
+
+                line = raw_line.strip()
+                if not line.startswith("data:"):
+                    continue
+
+                payload = line[5:].strip()
+                if payload == "[DONE]":
+                    continue
+
+                try:
+                    data = json.loads(payload)
+                except json.JSONDecodeError:
+                    continue
+
+                candidates = data.get("candidates")
+                if not isinstance(candidates, list) or not candidates:
+                    continue
+
+                content = candidates[0].get("content", {})
+                parts = content.get("parts", [])
+
+                if not isinstance(parts, list):
+                    continue
+
+                for part in parts:
+                    text = part.get("text")
+                    if isinstance(text, str) and text:
+                        yield text
+
+        except LLMGenerationError:
+            raise
+        except requests.RequestException as exc:
+            raise LLMGenerationError(
+                "The cloud language model could not "
+                "complete the streamed response."
+            ) from exc
+        finally:
+            if response is not None:
+                response.close()
+            duration = time.perf_counter() - start
+            LLM_LATENCY.observe(duration)
+
     def _parse_answer(self, raw_response: str) -> str:
         raw_response = raw_response.strip()
 

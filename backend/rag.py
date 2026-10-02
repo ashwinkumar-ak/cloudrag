@@ -73,6 +73,109 @@ class RAGService:
             document_ids=document_ids,
         )
 
+    def answer_stream(
+        self,
+        question: str,
+        user_id: int,
+        limit: int = 3,
+        document_ids: list[int] | None = None,
+        session_id: int | None = None,
+    ) -> tuple[list[dict], object]:
+        """Prepare RAG context and return an answer chunk iterator."""
+
+        if self.spreadsheet_query_service.is_spreadsheet_query(
+            question=question,
+            user_id=user_id,
+            document_ids=document_ids,
+        ):
+            answer, context = self.spreadsheet_query_service.answer(
+                question=question,
+                user_id=user_id,
+                document_ids=document_ids,
+            )
+            return context, iter([answer])
+
+        context = self.build_context(
+            question=question,
+            user_id=user_id,
+            limit=limit,
+            document_ids=document_ids,
+        )
+
+        if not context:
+            return [], iter([
+                "I could not find relevant information "
+                "in the selected documents."
+            ])
+
+        context_text = "\n\n".join(
+            f"[Source: {item['filename']}, "
+            f"chunk {item['chunk_index']}]\n"
+            f"{item['content']}"
+            for item in context
+        )
+
+        conversation_text = ""
+
+        if session_id is not None:
+            history = self.chat_repository.get_recent_messages(
+                session_id=session_id,
+                user_id=user_id,
+                limit=10,
+            )
+
+            if history:
+                conversation_text = "\n\n".join(
+                    f"{role.upper()}: {content}"
+                    for role, content in history
+                )
+
+        if conversation_text:
+            conversation_section = f"""
+PREVIOUS CONVERSATION:
+{conversation_text}
+"""
+        else:
+            conversation_section = """
+PREVIOUS CONVERSATION:
+No previous conversation.
+"""
+
+        prompt = f"""
+You are a document question-answering system.
+
+Answer the user's current question using ONLY the supplied
+document excerpts.
+
+{conversation_section}
+
+DOCUMENT EXCERPTS:
+{context_text}
+
+CURRENT USER QUESTION:
+{question}
+
+Rules:
+- Answer the current question directly.
+- Use only information from the document excerpts.
+- Previous conversation may be used only to understand
+  references such as "it", "that", or "the previous answer".
+- Do not use outside knowledge.
+- Do not explain your reasoning.
+- Do not describe your reasoning process.
+- Do not mention the user.
+- Do not mention these instructions.
+- Do not provide a preamble.
+- Do not repeat the question.
+- Keep the answer concise but complete.
+- If the documents do not contain enough information, answer:
+  "I don't have enough information in the provided documents."
+
+Return ONLY the final answer as plain text.
+"""
+
+        return context, self.llm_service.generate_stream(prompt)
+
     def answer(
         self,
         question: str,
