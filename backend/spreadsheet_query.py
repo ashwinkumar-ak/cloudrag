@@ -124,7 +124,7 @@ class SpreadsheetQueryService:
         lowered = question.lower()
 
         # Prefer a column named after "of", e.g. "sum of Value".
-        match = re.search(r"\b(?:of|for|on)\s+([A-Za-z][A-Za-z0-9_ -]*)", question, re.IGNORECASE)
+        match = re.search(r"\b(?:of|for|on)\s+(.+?)(?:\s+where\b|\s+with\b|$)", question, re.IGNORECASE)
         if match:
             candidate = find_column(rows[0]["data"], match.group(1).strip())
             if candidate:
@@ -152,7 +152,10 @@ class SpreadsheetQueryService:
         if not column:
             return "I found the matching rows, but I could not determine which column to calculate."
 
-        numbers = [numeric_value(row["data"].get(column)) for row in rows]
+        numbers = [
+            self._calculation_value(row, column)
+            for row in rows
+        ]
         numbers = [value for value in numbers if value is not None]
         if not numbers:
             return f"The {column} column does not contain numeric values for the matching rows."
@@ -218,6 +221,30 @@ class SpreadsheetQueryService:
             "content": content,
             "distance": 0.0,
         }
+
+    @staticmethod
+    def _calculation_value(row, column: str) -> Decimal | None:
+        """Return the value users see in the spreadsheet for formatted numbers.
+
+        Excel cells can contain hidden fractional precision while their number
+        format displays whole dollars (for example, 77985.126 -> $77,985).
+        Aggregating the hidden binary/decimal precision produces surprising
+        answers. For currency/percentage cells, calculate from the displayed
+        value so the result matches the spreadsheet the user sees.
+        """
+        display = row.get("display_data", {}).get(column)
+        data = row.get("data", {}).get(column)
+
+        if isinstance(display, str):
+            cleaned = display.strip()
+            if "$" in cleaned or cleaned.endswith("%"):
+                parsed = numeric_value(cleaned)
+                if parsed is not None:
+                    if cleaned.endswith("%"):
+                        return parsed / Decimal("100")
+                    return parsed
+
+        return numeric_value(data)
 
     @staticmethod
     def _format_result(value: Decimal, rows, column: str) -> str:

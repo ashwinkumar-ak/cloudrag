@@ -9,8 +9,13 @@ from openpyxl import load_workbook
 
 
 def json_safe(value):
-    if value is None or isinstance(value, (str, int, float, bool)):
+    if value is None or isinstance(value, (str, int, bool)):
         return value
+    if isinstance(value, float):
+        # Keep spreadsheet numeric values exact instead of persisting the
+        # binary floating-point representation in JSON. Decimal strings are
+        # converted back to Decimal for deterministic calculations.
+        return str(Decimal(str(value)))
     if isinstance(value, (datetime, date)):
         return value.isoformat()
     if isinstance(value, Decimal):

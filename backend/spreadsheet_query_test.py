@@ -71,4 +71,14 @@ def test_deterministic_sum():
         "What is the total Value where Postcode = 2198?",
         user_id=1,
     )
-    assert "$159,567.16" in answer
+    assert "$159,567" in answer
+
+
+def test_currency_sum_uses_displayed_precision():
+    service = make_service(rows())
+    answer, _ = service.answer(
+        "Sum of Value where Postcode = 2198",
+        user_id=1,
+    )
+    assert "$159,567" in answer
+    assert "$159,567.16" not in answer
