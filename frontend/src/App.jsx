@@ -1491,7 +1491,7 @@ async function askQuestion() {
                 id="document-upload"
                 className="document-file-input"
                 type="file"
-                accept=".txt,.md,.pdf,.docx,.pptx,.xlsx,.xlsm,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                accept=".txt,.md,.pdf,.docx,.pptx,.xlsx,.xlsm,.csv,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 onChange={(event) =>
                   setFile(
                     event.target.files?.[0] || null

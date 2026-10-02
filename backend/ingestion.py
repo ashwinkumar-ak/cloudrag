@@ -8,6 +8,7 @@ from backend.metrics import (
 )
 from backend.repositories.chunks import ChunkRepository
 from backend.repositories.documents import DocumentRepository
+from backend.repositories.spreadsheets import SpreadsheetRepository
 
 
 class IngestionService:
@@ -15,6 +16,7 @@ class IngestionService:
         self.document_repository = DocumentRepository()
         self.chunk_repository = ChunkRepository()
         self.embedding_service = EmbeddingService()
+        self.spreadsheet_repository = SpreadsheetRepository()
         self.chunker = TextChunker(
             chunk_size=1000,
             overlap_sentences=1,
@@ -54,6 +56,7 @@ class IngestionService:
         self,
         document_id: int,
         text: str,
+        spreadsheet_rows: list[dict] | None = None,
     ) -> None:
         if not text.strip():
             raise ValueError("Document text must not be empty")
@@ -83,6 +86,13 @@ class IngestionService:
                 raise ValueError("No usable text chunks were created.")
 
             self.chunk_repository.delete_document_chunks(document_id)
+            self.spreadsheet_repository.delete_rows(document_id)
+
+            if spreadsheet_rows:
+                self.spreadsheet_repository.replace_rows(
+                    document_id=document_id,
+                    rows=spreadsheet_rows,
+                )
 
             total_chunks = len(chunks)
 
@@ -116,6 +126,7 @@ class IngestionService:
 
         except Exception as exc:
             message = str(exc).strip() or "Document processing failed."
+            self.spreadsheet_repository.delete_rows(document_id)
             self.document_repository.update_progress(
                 document_id,
                 status="failed",

@@ -3,6 +3,7 @@ from backend.llm import LLMService
 from backend.repositories.chunks import ChunkRepository
 from backend.repositories.documents import DocumentRepository
 from backend.repositories.chat import ChatRepository
+from backend.spreadsheet_query import SpreadsheetQueryService
 
 
 class RAGService:
@@ -12,6 +13,7 @@ class RAGService:
         self.document_repository = DocumentRepository()
         self.llm_service = LLMService()
         self.chat_repository = ChatRepository()
+        self.spreadsheet_query_service = SpreadsheetQueryService()
 
     def retrieve(
         self,
@@ -79,6 +81,17 @@ class RAGService:
         document_ids: list[int] | None = None,
         session_id: int | None = None,
     ) -> tuple[str, list[dict]]:
+
+        if self.spreadsheet_query_service.is_spreadsheet_query(
+            question=question,
+            user_id=user_id,
+            document_ids=document_ids,
+        ):
+            return self.spreadsheet_query_service.answer(
+                question=question,
+                user_id=user_id,
+                document_ids=document_ids,
+            )
 
         context = self.build_context(
             question=question,

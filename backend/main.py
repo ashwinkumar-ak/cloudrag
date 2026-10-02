@@ -28,6 +28,7 @@ from backend.document_parser import (
     DocumentParseError,
     extract_text,
 )
+from backend.spreadsheet import parse_spreadsheet
 from backend.embedding import EmbeddingService
 from backend.health import get_health_status, is_ready
 from backend.ingestion import IngestionService
@@ -304,6 +305,13 @@ def process_uploaded_document(
 
         document_storage_content = document_storage.download(storage_path)
 
+        spreadsheet_rows = None
+        if Path(filename).suffix.lower() in {".xlsx", ".xlsm", ".csv"}:
+            spreadsheet_rows = parse_spreadsheet(
+                filename=filename,
+                content=document_storage_content,
+            )
+
         text = extract_text(
             filename=filename,
             content=document_storage_content,
@@ -317,6 +325,7 @@ def process_uploaded_document(
         ingestion_service.process_document(
             document_id=document_id,
             text=text,
+            spreadsheet_rows=spreadsheet_rows,
         )
     except Exception as exc:
         message = str(exc).strip() or "Document processing failed."
