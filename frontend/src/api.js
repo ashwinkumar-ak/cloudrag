@@ -334,6 +334,17 @@ export async function listSessions() {
   return apiFetch("/sessions");
 }
 
+export async function getModels() {
+  return apiFetch("/models");
+}
+
+export async function updateSessionModel(sessionId, model) {
+  return apiFetch(`/sessions/${sessionId}/model`, {
+    method: "PUT",
+    body: JSON.stringify({ model }),
+  });
+}
+
 export async function createSession(title = "New Chat") {
   return apiFetch("/sessions", {
     method: "POST",

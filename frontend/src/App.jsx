@@ -8,6 +8,8 @@ import {
   getStoredToken,
   saveToken,
   getHealth,
+  getModels,
+  updateSessionModel,
   streamAskQuestion,
   downloadDocument,
   compareDocuments,
@@ -117,6 +119,9 @@ const [comparisonError, setComparisonError] = useState("");
   const [searchError, setSearchError] = useState("");
 
   const [health, setHealth] = useState(null);
+  const [models, setModels] = useState([]);
+  const [modelChanging, setModelChanging] = useState(false);
+  const [modelError, setModelError] = useState("");
 
   const [theme, setTheme] = useState(() => {
     return localStorage.getItem("cloudrag-theme") || "light";
@@ -307,6 +312,41 @@ async function deleteCurrentSession() {
     setAskError(error.message);
   } finally {
     setDeletingSession(false);
+  }
+}
+
+async function loadModels() {
+  try {
+    const data = await getModels();
+    setModels(data.models || []);
+  } catch (error) {
+    console.error(error);
+    setModels([]);
+  }
+}
+
+async function handleModelChange(event) {
+  const model = event.target.value;
+
+  if (!currentSessionId || !model || modelChanging) {
+    return;
+  }
+
+  setModelChanging(true);
+  setModelError("");
+
+  try {
+    const updated = await updateSessionModel(currentSessionId, model);
+
+    setSessions((current) =>
+      current.map((session) =>
+        session.id === updated.id ? updated : session
+      )
+    );
+  } catch (error) {
+    setModelError(error.message || "Could not change model.");
+  } finally {
+    setModelChanging(false);
   }
 }
 
@@ -776,6 +816,7 @@ async function askQuestion() {
     }
 
     loadSessions();
+    loadModels();
     loadDocuments();
     loadHealth();
 
@@ -1156,6 +1197,25 @@ async function askQuestion() {
           </div>
 
           <div className="chat-header-actions">
+            {currentSession && models.length > 0 && (
+              <label className="model-selector" title={modelError || "Choose the model used for this chat"}>
+                <span>Model</span>
+                <select
+                  value={currentSession.model || ""}
+                  onChange={handleModelChange}
+                  disabled={modelChanging}
+                  aria-label="Select AI model"
+                >
+                  {models.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.name}
+                    </option>
+                  ))}
+                </select>
+                {modelChanging && <span className="model-selector-status">Saving…</span>}
+              </label>
+            )}
+
             <div
               style={{
                 display: "flex",

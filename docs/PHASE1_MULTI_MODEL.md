@@ -54,3 +54,8 @@ This Phase 1 package also includes the verified Evaluation UI completion:
 - Knowledge Base document IDs for evaluation-case references
 
 The Evaluation UI is frontend-only and does not alter the V2 Gemini Embedding 2 configuration.
+
+
+## Frontend model selector
+
+The Chat header includes a model selector backed by `GET /models` and `PUT /sessions/{session_id}/model`. The selected model is persisted per chat session and is restored when the conversation is reopened.

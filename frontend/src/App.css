@@ -900,6 +900,43 @@ input {
   margin-left: 20px;
 }
 
+.model-selector {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--cr-border);
+  border-radius: 9px;
+  background: var(--cr-surface);
+  color: var(--cr-text-muted);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.model-selector select {
+  min-width: 150px;
+  max-width: 210px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--cr-text);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.model-selector select:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.model-selector-status {
+  color: var(--cr-text-muted);
+  font-size: 8px;
+}
+
 .header-health {
   display: flex;
   align-items: center;
@@ -2929,6 +2966,19 @@ input {
     min-width: 0;
     gap: 5px;
     margin-left: 4px;
+  }
+
+  .model-selector {
+    padding: 4px 6px;
+  }
+
+  .model-selector > span:first-child {
+    display: none;
+  }
+
+  .model-selector select {
+    min-width: 118px;
+    max-width: 145px;
   }
 
   /* Hide the desktop health indicator on small screens */
