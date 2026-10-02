@@ -1,4 +1,3 @@
-import os
 import time
 
 import requests
@@ -30,6 +29,7 @@ class EmbeddingService:
             )
 
         start = time.perf_counter()
+        response = None
 
         try:
             response = requests.post(
@@ -73,6 +73,13 @@ class EmbeddingService:
             return embedding
 
         except requests.RequestException as exc:
+            if response is not None:
+                detail = response.text[:2000]
+                raise RuntimeError(
+                    f"Gemini embedding request failed "
+                    f"(HTTP {response.status_code}): {detail}"
+                ) from exc
+
             raise RuntimeError(
                 "Gemini embedding service could not generate "
                 "an embedding."
