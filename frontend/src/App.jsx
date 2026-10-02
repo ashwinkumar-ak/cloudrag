@@ -226,6 +226,7 @@ async function loadSession(sessionId) {
   setCurrentSessionId(sessionId);
   setLoadingMessages(true);
   setAskError("");
+  setSelectedCitation(null);
 
   try {
     const data = await apiFetch(
@@ -1253,6 +1254,44 @@ async function askQuestion() {
                       <div className="message-text">
                         {message.content}
                       </div>
+
+                      {message.role === "assistant" &&
+                        message.citations?.length > 0 && (
+                          <div className="message-citations">
+                            <div className="message-citations-label">
+                              Sources
+                            </div>
+
+                            <div className="message-citation-list">
+                              {message.citations.map(
+                                (citation, index) => (
+                                  <button
+                                    type="button"
+                                    className="citation-button"
+                                    key={`${message.id}-${citation.chunk_id}`}
+                                    onClick={() =>
+                                      setSelectedCitation({
+                                        ...citation,
+                                        number: index + 1,
+                                      })
+                                    }
+                                    title={`View source ${index + 1}: ${citation.filename}`}
+                                  >
+                                    <span className="citation-number">
+                                      {index + 1}
+                                    </span>
+                                    <span className="citation-filename">
+                                      {citation.filename}
+                                    </span>
+                                    <span className="citation-arrow">
+                                      →
+                                    </span>
+                                  </button>
+                                )
+                              )}
+                            </div>
+                          </div>
+                        )}
                     </div>
                   </article>
                 ))}
@@ -1359,6 +1398,73 @@ async function askQuestion() {
           </div>
         </div>
       </section>
+
+      {selectedCitation && (
+        <>
+          <button
+            type="button"
+            className="citation-panel-overlay"
+            aria-label="Close citation"
+            onClick={() => setSelectedCitation(null)}
+          />
+
+          <aside className="citation-panel">
+            <div className="side-panel-header">
+              <div>
+                <h2>Source {selectedCitation.number}</h2>
+                <p>Retrieved document evidence.</p>
+              </div>
+
+              <button
+                className="panel-close"
+                onClick={() => setSelectedCitation(null)}
+                aria-label="Close citation"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="panel-body citation-panel-body">
+              <div className="citation-source-card">
+                <strong>{selectedCitation.filename}</strong>
+                <span>
+                  Chunk {selectedCitation.chunk_index}
+                </span>
+              </div>
+
+              <div className="citation-evidence-label">
+                Source evidence
+              </div>
+
+              <blockquote className="citation-evidence">
+                {selectedCitation.content}
+              </blockquote>
+
+              <div className="citation-meta">
+                Retrieval distance: {
+                  Number(selectedCitation.distance).toFixed(4)
+                }
+              </div>
+
+              <button
+                type="button"
+                className="citation-download-button"
+                onClick={async () => {
+                  try {
+                    await downloadDocument(
+                      selectedCitation.document_id
+                    );
+                  } catch (error) {
+                    setAskError(error.message);
+                  }
+                }}
+              >
+                Download original document
+              </button>
+            </div>
+          </aside>
+        </>
+      )}
 
       {knowledgeOpen && (
         <aside className="side-panel">

@@ -778,6 +778,7 @@ def ask(
             user_id=user_id,
             role="assistant",
             content=answer,
+            citations=context,
         )
 
         return AskResponse(
@@ -880,7 +881,8 @@ def get_session_messages(
             session_id=row[1],
             role=row[2],
             content=row[3],
-            created_at=row[4],
+            citations=row[4] or [],
+            created_at=row[5],
         )
         for row in rows
     ]

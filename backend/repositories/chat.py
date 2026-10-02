@@ -1,3 +1,5 @@
+import json
+
 import psycopg
 
 from backend.config import settings
@@ -179,6 +181,7 @@ class ChatRepository:
         user_id: int,
         role: str,
         content: str,
+        citations: list[dict] | None = None,
     ) -> int:
         if role not in {"user", "assistant"}:
             raise ValueError(
@@ -196,12 +199,14 @@ class ChatRepository:
                     INSERT INTO chat_messages (
                         session_id,
                         role,
-                        content
+                        content,
+                        citations
                     )
                     SELECT
                         %s,
                         %s,
-                        %s
+                        %s,
+                        %s::jsonb
                     WHERE EXISTS (
                         SELECT 1
                         FROM chat_sessions
@@ -214,6 +219,7 @@ class ChatRepository:
                         session_id,
                         role,
                         content,
+                        json.dumps(citations or []),
                         session_id,
                         user_id,
                     ),
@@ -263,6 +269,7 @@ class ChatRepository:
                         m.session_id,
                         m.role,
                         m.content,
+                        m.citations,
                         m.created_at
                     FROM chat_messages m
                     INNER JOIN chat_sessions s

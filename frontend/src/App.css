@@ -3177,3 +3177,188 @@ input {
 .document-retry-button:hover {
   background: var(--cr-surface-hover);
 }
+
+
+/* =========================================================
+   INTERACTIVE CITATIONS
+   ========================================================= */
+
+.message-citations {
+  margin-top: 12px;
+}
+
+.message-citations-label {
+  margin-bottom: 6px;
+  color: var(--cr-text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.message-citation-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.citation-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 240px;
+  padding: 5px 8px;
+  border: 1px solid var(--cr-border);
+  border-radius: 7px;
+  background: var(--cr-surface);
+  color: var(--cr-text-soft);
+  cursor: pointer;
+  font: inherit;
+  font-size: 9px;
+  text-align: left;
+}
+
+.citation-button:hover {
+  border-color: var(--cr-accent);
+  background: var(--cr-surface-hover);
+}
+
+.citation-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  border-radius: 5px;
+  background: var(--cr-accent);
+  color: white;
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.citation-filename {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.citation-arrow {
+  flex: 0 0 auto;
+  color: var(--cr-text-muted);
+}
+
+.citation-panel-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 450;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: rgba(15, 23, 42, 0.28);
+  cursor: pointer;
+}
+
+.citation-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(520px, 94vw);
+  height: 100dvh;
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--cr-border);
+  background: var(--cr-bg);
+  box-shadow: -10px 0 35px rgba(0, 0, 0, 0.18);
+}
+
+.citation-panel-body {
+  overflow-y: auto;
+}
+
+.citation-source-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--cr-border);
+  border-radius: 10px;
+  background: var(--cr-surface);
+}
+
+.citation-source-card strong {
+  overflow-wrap: anywhere;
+  color: var(--cr-text);
+  font-size: 12px;
+}
+
+.citation-source-card span,
+.citation-meta {
+  color: var(--cr-text-muted);
+  font-size: 9px;
+}
+
+.citation-evidence-label {
+  margin: 18px 0 7px;
+  color: var(--cr-text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.citation-evidence {
+  margin: 0;
+  padding: 14px;
+  border-left: 3px solid var(--cr-accent);
+  border-radius: 0 9px 9px 0;
+  background: var(--cr-surface);
+  color: var(--cr-text-soft);
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.citation-meta {
+  margin-top: 10px;
+}
+
+.citation-download-button {
+  width: 100%;
+  min-height: 38px;
+  margin-top: 18px;
+  border: 1px solid var(--cr-border);
+  border-radius: 8px;
+  background: var(--cr-surface);
+  color: var(--cr-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.citation-download-button:hover {
+  border-color: var(--cr-accent);
+}
+
+@media (max-width: 700px) {
+  .citation-panel {
+    width: min(390px, 94vw);
+    max-width: 94vw;
+  }
+
+  .message-citation-list {
+    max-width: 100%;
+  }
+
+  .citation-button {
+    max-width: min(230px, 85vw);
+  }
+}

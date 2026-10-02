@@ -102,6 +102,7 @@ class ChatMessageResponse(BaseModel):
     session_id: int
     role: str
     content: str
+    citations: list[Citation] = Field(default_factory=list)
     created_at: datetime
 
 
