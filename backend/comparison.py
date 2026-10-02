@@ -49,24 +49,38 @@ class DocumentComparisonService:
             filenames[document_id] = filename
 
         prompt_parts = [
-            "Compare the two documents using ONLY the supplied excerpts.",
-            "Do not invent facts or calculations.",
-            "Clearly distinguish what each document says.",
-            "If information is missing from an excerpt, say that it is not available in the supplied evidence.",
-            "Return concise Markdown with these headings: Overview, Similarities, Differences, Important Details, Limitations.",
+            "Compare exactly these two documents using ONLY the supplied evidence.",
+            "Do not invent facts, calculations, or details that are absent from the evidence.",
+            "If a document has no supplied excerpts, explicitly state that the document contains no indexed text available for comparison.",
+            "Do not treat missing evidence as a substantive similarity or difference.",
+            "Write a useful but concise Markdown comparison using exactly these headings:",
+            "# Overview",
+            "# Similarities",
+            "# Differences",
+            "# Important Details",
+            "# Limitations",
+            "Under Similarities and Differences, use bullet points. If there are no supported similarities, say: No supported similarities were found in the supplied evidence.",
+            "If there are no supported differences, say: No supported differences were found in the supplied evidence.",
+            "Under Limitations, mention missing/empty evidence when applicable.",
             "Do not include a Sources section; citations are attached separately by the application.",
             "",
         ]
 
         for document_id in document_ids:
             prompt_parts.append(f"DOCUMENT: {filenames[document_id]}")
-            for index, item in enumerate(contexts[document_id], start=1):
-                prompt_parts.append(
-                    f"[Excerpt {index} | chunk {item['chunk_index']}]:\n{item['content'][:1400]}"
-                )
+            if not contexts[document_id]:
+                prompt_parts.append("[No indexed text available for this document]")
+            else:
+                for index, item in enumerate(contexts[document_id], start=1):
+                    prompt_parts.append(
+                        f"[Excerpt {index} | chunk {item['chunk_index']}]:\n{item['content'][:1400]}"
+                    )
             prompt_parts.append("")
 
-        answer = self.llm_service.generate("\n".join(prompt_parts))
+        answer = self.llm_service.generate(
+            "\n".join(prompt_parts),
+            max_output_tokens=700,
+        )
 
         citations = []
         for document_id in document_ids:

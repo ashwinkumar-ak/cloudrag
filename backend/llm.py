@@ -22,7 +22,7 @@ class LLMService:
 
         self.base_url = settings.gemini_api_base_url
 
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str, max_output_tokens: int = 180) -> str:
         if not self.api_key:
             raise RuntimeError(
                 "GEMINI_API_KEY is not configured."
@@ -48,7 +48,7 @@ class LLMService:
                         ],
                         "generationConfig": {
                             "temperature": 0,
-                            "maxOutputTokens": 180,
+                            "maxOutputTokens": max_output_tokens,
                             "responseMimeType": (
                                 "application/json"
                             ),
