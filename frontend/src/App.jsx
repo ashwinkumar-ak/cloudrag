@@ -81,6 +81,7 @@ function App() {
   const [uploadStatus, setUploadStatus] = useState("");
 
 const [knowledgeOpen, setKnowledgeOpen] = useState(false);
+const [selectedCitation, setSelectedCitation] = useState(null);
 const [systemOpen, setSystemOpen] = useState(false);
 const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
