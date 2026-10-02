@@ -53,11 +53,13 @@ from backend.models import (
     SearchResult,
     CompareRequest,
     CompareResponse,
+    EvaluationRequest,
     SessionResponse,
     UserResponse,
 )
 from backend.rag import RAGService
 from backend.comparison import DocumentComparisonService
+from backend.evaluation import RAGEvaluationService
 from backend.storage import DocumentStorage, StorageError
 from backend.repositories.chunks import ChunkRepository
 from backend.repositories.documents import DocumentRepository
@@ -74,6 +76,8 @@ from backend.security import (
     SEARCH_WINDOW,
     COMPARE_LIMIT,
     COMPARE_WINDOW,
+    EVALUATION_LIMIT,
+    EVALUATION_WINDOW,
     UPLOAD_LIMIT,
     UPLOAD_WINDOW,
     get_client_identifier,
@@ -87,6 +91,7 @@ document_repository = DocumentRepository()
 ingestion_service = IngestionService()
 rag_service = RAGService()
 comparison_service = DocumentComparisonService()
+evaluation_service = RAGEvaluationService()
 chat_repository = ChatRepository()
 user_repository = UserRepository()
 document_storage = DocumentStorage()
@@ -834,6 +839,43 @@ def compare_documents(
         raise HTTPException(
             status_code=500,
             detail="Document comparison failed. Check the Render logs for the underlying error.",
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
+# Evaluation
+# ---------------------------------------------------------------------------
+
+
+@app.post("/evaluation/run")
+def run_evaluation(
+    request: EvaluationRequest,
+    user_id: int = Depends(get_current_user_id),
+):
+    # Evaluation is intentionally limited because each case performs a full RAG request.
+    # The authenticated user ID is part of the key so users do not affect one another.
+    # Request-level IP limiting is handled by the global middleware; this endpoint adds
+    # a lightweight per-user window below.
+    key = f"evaluation:user:{user_id}"
+    if not rate_limiter.allow(key, EVALUATION_LIMIT, EVALUATION_WINDOW):
+        raise HTTPException(
+            status_code=429,
+            detail="Evaluation rate limit exceeded. Please try again later.",
+            headers={"Retry-After": str(EVALUATION_WINDOW)},
+        )
+
+    payload = [case.model_dump() for case in request.cases]
+
+    try:
+        return evaluation_service.run(
+            cases=payload,
+            user_id=user_id,
+            default_limit=request.limit,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Evaluation failed. Check the server logs for the underlying error.",
         ) from exc
 
 

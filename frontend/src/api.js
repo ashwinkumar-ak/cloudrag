@@ -369,3 +369,10 @@ export async function getHealth() {
 }
 
 export { API_URL };
+
+export async function runEvaluation(cases, limit = 5) {
+  return apiFetch("/evaluation/run", {
+    method: "POST",
+    body: JSON.stringify({ cases, limit }),
+  });
+}

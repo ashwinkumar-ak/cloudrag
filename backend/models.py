@@ -166,3 +166,16 @@ class CompareResponse(BaseModel):
     answer: str
     citations: list[CompareCitation]
     documents: list[dict]
+
+
+class EvaluationCase(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+    expected_answer: str = Field(min_length=1, max_length=10000)
+    expected_document_ids: list[int] = Field(default_factory=list)
+    document_ids: list[int] = Field(default_factory=list)
+    limit: int = Field(default=5, ge=1, le=10)
+
+
+class EvaluationRequest(BaseModel):
+    cases: list[EvaluationCase] = Field(min_length=1, max_length=10)
+    limit: int = Field(default=5, ge=1, le=10)
