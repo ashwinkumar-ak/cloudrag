@@ -1,835 +1,364 @@
-# CloudRAG
+# CloudRAG — Production-style Document Intelligence Platform
 
-**Production-style Document Intelligence and Retrieval-Augmented Generation (RAG) platform built with FastAPI, React, PostgreSQL/pgvector, local AI models, and a cloud deployment path.**
+CloudRAG is a full-stack Retrieval-Augmented Generation (RAG) platform for uploading documents, asking grounded questions, analyzing spreadsheets, comparing documents, and evaluating retrieval quality.
 
-CloudRAG is a RAG platform designed around production-oriented concerns such as authentication, multi-user data isolation, vector retrieval, hybrid search, observability, health checks, automated testing, and containerized deployment. It has two deployment modes: a fully local development stack and a public cloud deployment.
+It is designed as a production-style application rather than a model demo, with authentication, user-level data ownership, persistent document storage, ingestion tracking, interactive citations, streaming answers, rate limiting, security headers, evaluation tooling, and separate local/cloud execution paths.
 
-## Public Application
+## Live Demo
 
-The current cloud deployment is publicly accessible at:
+**Frontend:** https://cloudrag-cyan.vercel.app/
 
-**https://cloudrag-cyan.vercel.app/**
-
-The public application uses the cloud architecture described below and does not depend on the developer's local Windows PC.
-
-## Features
-
-### Document Intelligence
-- Document upload and ingestion
-- Text extraction
-- Sentence-aware chunking
-- Local embedding generation in the local deployment
-- Gemini Embedding 2 in the cloud deployment
-- PostgreSQL + pgvector storage
-- Semantic vector retrieval
-- Keyword retrieval
-- Hybrid retrieval
-- Document-level filtering
-- Source citations in RAG responses
-
-### RAG and Chat
-- Local LLM-powered question answering in the local deployment
-- Ollama integration for local development
-- `qwen3:4b` local model
-- Gemini 3.5 Flash-Lite in the cloud deployment
-- Retrieval-grounded answers
-- Conversation history
-- Persistent chat sessions
-- Multiple chat sessions
-- Session deletion
-- Context-aware follow-up questions
-
-### Authentication and Security
-- User registration and login
-- JWT access tokens
-- Password hashing with `scrypt`
-- Protected API endpoints
-- User-owned documents and chat sessions
-- User-scoped vector retrieval
-- Database-level ownership enforcement
-
-### Observability
-- Liveness, readiness, and health endpoints
-- PostgreSQL and AI service health monitoring
-- Prometheus-compatible metrics
-- HTTP request and latency metrics
-- Document ingestion metrics
-- LLM latency metrics
-- Docker healthchecks
-
-### Engineering
-- FastAPI REST API
-- React + Vite frontend
-- Docker Compose
-- PostgreSQL + pgvector
-- Automated pytest test suite
-- GitHub Actions CI
-- Persistent PostgreSQL storage
-- Containerized backend deployment
+The public deployment runs independently of the local development machine.
 
 ## Architecture
 
-CloudRAG has a local architecture for development and a separate cloud architecture for public access.
+![CloudRAG Architecture](docs/cloudrag-architecture.png)
 
-### Local Architecture
-
-```text
-                         Browser
-                            |
-                            v
-                 +---------------------+
-                 | React + Vite        |
-                 | Nginx               |
-                 | Docker :5173        |
-                 +----------+----------+
-                            |
-                            v
-                 +---------------------+
-                 | FastAPI Backend     |
-                 | Docker :8000        |
-                 +-----+----------+-----+
-                       |          |
-                       v          v
-              +-------------+  +----------------+
-              | PostgreSQL  |  | Ollama         |
-              | + pgvector  |  | Windows Host   |
-              | Docker      |  | :11434         |
-              | :5432       |  | qwen3:4b       |
-              +-------------+  +----------------+
-```
-
-### Cloud Architecture
+### Local development
 
 ```text
-                         Internet
-                            |
-                  +---------+---------+
-                  |                   |
-                  v                   v
-          +---------------+   +---------------+
-          | Vercel        |   | Render        |
-          | React/Vite    |-->| FastAPI       |
-          | Frontend      |   | Backend       |
-          +---------------+   +-------+-------+
-                                      |
-                         +------------+------------+
-                         |                         |
-                         v                         v
-                +----------------+        +----------------+
-                | Supabase       |        | Gemini APIs    |
-                | PostgreSQL     |        | Embedding 2    |
-                | + pgvector     |        | 3.5 Flash-Lite |
-                +----------------+        +----------------+
+Browser
+  ↓
+React + Vite + Nginx
+  ↓
+FastAPI
+  ├── PostgreSQL + pgvector
+  ├── Local file storage
+  └── Ollama → Qwen3:4b
 ```
 
-The cloud deployment is independent of the local Windows machine. Local Ollama and Docker resources are used only for local development and testing.
-
-### RAG Pipeline
+### Cloud deployment
 
 ```text
-Document
-   |
-   v
-Text Extraction
-   |
-   v
-Text Chunking
-   |
-   v
-Embeddings
-   |
-   +---- Local: Sentence Transformers
-   |
-   +---- Cloud: Gemini Embedding 2
-   |
-   v
-PostgreSQL + pgvector
-   |
-   v
-Hybrid Retrieval
-   |
-   +---- Semantic Search
-   |
-   +---- Keyword Search
-   |
-   v
-Ranked Context
-   |
-   v
-LLM Generation
-   |
-   +---- Local: Ollama / qwen3:4b
-   |
-   +---- Cloud: Gemini 3.5 Flash-Lite
-   |
-   v
-Grounded Answer + Citations
+Internet
+  ↓
+Vercel
+  ↓
+Render → FastAPI
+          ├── Supabase PostgreSQL + pgvector
+          ├── Supabase Storage
+          └── Gemini API
 ```
+
+The local and cloud environments intentionally use different infrastructure. The local environment is optimized for development and offline-capable experimentation, while the cloud environment uses managed services and Gemini.
+
+## Key Features
+
+| # | Feature | What it provides |
+|---|---|---|
+| 1 | Original file storage | Keeps uploaded source files available for download |
+| 2 | Production ingestion | Background processing with persistent stages, progress and failures |
+| 3 | Interactive citations | Answers link back to source documents and retrieved evidence |
+| 4 | Spreadsheet intelligence | Structured Excel/CSV storage, filtering and deterministic calculations |
+| 5 | RAG evaluation | Retrieval hit rate, reference coverage, exact match and latency metrics |
+| 6 | Security hardening | Authentication, ownership checks, rate limiting, upload limits and security headers |
+| 7 | Streaming responses | Progressive AI answer generation using SSE |
+| 8 | Document comparison | Side-by-side evidence-based comparison of two documents |
 
 ## Technology Stack
-
-### Backend
-- Python 3.14
-- FastAPI
-- Pydantic Settings
-- psycopg
-- PostgreSQL
-- pgvector
-- Sentence Transformers (local deployment)
-- PyMuPDF
-- python-docx
-- python-pptx
-- openpyxl
-- PyJWT
-- Prometheus Client
-- Requests
 
 ### Frontend
 - React
 - Vite
 - Nginx
+- Responsive desktop/mobile UI
 
-### AI
-- Local: Ollama + Qwen3 4B
-- Local: Sentence Transformers embeddings
-- Cloud: Gemini Embedding 2
-- Cloud: Gemini 3.5 Flash-Lite
+### Backend
+- Python
+- FastAPI
+- Uvicorn
+- JWT authentication
+- PostgreSQL access
+- SSE streaming
 
-### Infrastructure
+### Data and retrieval
+- PostgreSQL
+- pgvector
+- Vector embeddings
+- User-scoped document/chunk retrieval
+- Structured spreadsheet rows
+
+### Local AI
+- Ollama
+- Qwen3:4b
+
+### Cloud AI
+- Google Gemini
+- Gemini embeddings
+- Gemini Flash-Lite generation
+
+### Cloud infrastructure
+- Vercel — frontend hosting
+- Render — backend hosting
+- Supabase — PostgreSQL/pgvector and object storage
+- Google Gemini API — cloud inference
+
+### Development
 - Docker
 - Docker Compose
-- PostgreSQL + pgvector
+- Pytest
 - GitHub Actions
 
-### Testing
-- pytest
-- FastAPI/Starlette test client
+## Document Pipeline
+
+```text
+Upload
+  ↓
+Persistent document record
+  ↓
+Original file storage
+  ↓
+Parsing
+  ↓
+Text extraction
+  ↓
+Chunking
+  ↓
+Embedding generation
+  ↓
+pgvector storage
+  ↓
+Semantic retrieval
+  ↓
+LLM answer generation
+  ↓
+Citations + persisted chat history
+```
+
+Spreadsheet files additionally follow a structured path:
+
+```text
+Excel / CSV
+  ↓
+Typed row extraction
+  ↓
+Structured JSONB rows
+  ↓
+Deterministic filtering/calculation
+  ↓
+Result rows used as evidence
+```
+
+## Security
+
+CloudRAG includes:
+
+- JWT authentication
+- Per-user document ownership
+- Per-user chat/session ownership
+- Protected document download
+- Protected search and answer endpoints
+- Upload size limits
+- Sliding-window rate limiting
+- Separate limits for authentication, search, chat and uploads
+- `429 Too Many Requests` responses with `Retry-After`
+- `413 Payload Too Large` for oversized uploads
+- `X-Content-Type-Options`
+- `X-Frame-Options`
+- `Referrer-Policy`
+- `Permissions-Policy`
+- HSTS in production
+
+The production configuration keeps secrets outside the repository.
+
+## API Surface
+
+Representative endpoint groups include:
+
+```text
+/auth/register
+/auth/login
+/auth/me
+
+/documents
+/documents/{id}
+/documents/{id}/download
+/documents/{id}/retry
+/documents/compare
+
+/search
+/ask
+/ask/stream
+
+/evaluation/*
+/health
+/live
+/ready
+/metrics
+```
+
+Swagger/OpenAPI is available from the FastAPI deployment at:
+
+```text
+/docs
+```
+
+## RAG Evaluation
+
+The evaluation panel supports small, repeatable test sets and reports:
+
+- Retrieval hit rate
+- Reference-answer coverage
+- Exact-match rate
+- Average latency
+- p95 latency
+- Individual test-case results
+- Generated answers
+
+Evaluation is intentionally lightweight and does not require a separate LLM judge.
+
+## Local Development
+
+### Requirements
+
+- Docker Desktop
+- Python 3.14+
+- Ollama
+- Qwen3:4b
+
+### Start Ollama
+
+```powershell
+ollama pull qwen3:4b
+ollama serve
+```
+
+### Start CloudRAG
+
+```powershell
+docker compose up --build
+```
+
+Local services:
+
+```text
+Frontend: http://localhost:5173
+Backend:  http://localhost:8000
+Swagger:  http://localhost:8000/docs
+Ollama:   http://localhost:11434
+```
+
+### Stop
+
+```powershell
+docker compose down
+```
+
+PostgreSQL data is persisted in the Docker volume.
+
+## Cloud Deployment
+
+The production architecture uses:
+
+```text
+Vercel
+  └── React/Vite frontend
+
+Render
+  └── FastAPI backend
+
+Supabase
+  ├── PostgreSQL + pgvector
+  └── Private document storage
+
+Google Gemini
+  ├── Embeddings
+  └── LLM generation
+```
+
+Required production configuration includes:
+
+```text
+DATABASE_URL
+JWT_SECRET_KEY
+FRONTEND_URL
+SUPABASE_SERVICE_ROLE_KEY
+GEMINI_API_KEY
+GEMINI_MODEL
+GEMINI_EMBEDDING_MODEL
+GEMINI_API_BASE_URL
+```
+
+Secrets must be configured in the hosting provider rather than committed to Git.
 
 ## Project Structure
 
 ```text
 cloudrag/
 ├── backend/
-│   ├── auth.py
-│   ├── chunking.py
+│   ├── main.py
 │   ├── config.py
+│   ├── auth.py
+│   ├── security.py
 │   ├── database.py
+│   ├── ingestion.py
+│   ├── chunking.py
 │   ├── document_parser.py
 │   ├── embedding.py
-│   ├── health.py
-│   ├── ingestion.py
 │   ├── llm.py
-│   ├── main.py
+│   ├── rag.py
 │   ├── metrics.py
 │   ├── models.py
-│   ├── rag.py
-│   ├── text_processing.py
-│   ├── Dockerfile
-│   ├── migrations/
-│   └── repositories/
+│   ├── repositories/
+│   └── migrations/
 ├── frontend/
-│   ├── src/
-│   ├── Dockerfile
-│   └── package.json
 ├── tests/
 ├── docs/
-├── .github/
-│   └── workflows/
-│       └── ci.yml
+├── .github/workflows/
 ├── compose.yaml
 ├── pyproject.toml
-├── .env.example
-├── .gitignore
 └── README.md
 ```
 
-# Getting Started
+## Verification
 
-CloudRAG can be run locally with Ollama or accessed through the public cloud deployment above. The local setup is useful for development, testing, and running the full stack on a Windows machine.
+The project was verified progressively during implementation with:
 
-## Prerequisites
+- Python compilation checks
+- Focused unit tests
+- Authentication testing
+- Upload and download testing
+- Ingestion failure/retry testing
+- Citation persistence testing
+- Spreadsheet calculation testing
+- RAG evaluation testing
+- Rate-limit testing
+- Upload-size testing
+- Security-header testing
+- Streaming response testing
+- Document comparison testing
+- Cloud deployment verification
+- Mobile UI verification
 
-Install:
-- Docker Desktop
-- Python 3.14+
-- Git
-- Ollama
+## Engineering Notes
 
-Pull the local LLM:
+A major design goal was to keep deterministic application logic separate from generative AI behavior.
 
-```powershell
-ollama pull qwen3:4b
-```
+For example:
 
-Verify Ollama:
+- File ownership is enforced by the application and database queries.
+- Spreadsheet filtering and arithmetic are deterministic.
+- Retrieval produces explicit evidence.
+- The LLM is responsible for natural-language synthesis rather than silently inventing application state.
+- Citations are persisted with assistant messages.
+- Local and cloud inference are separated behind the application layer.
 
-```powershell
-ollama list
-```
+This makes the system easier to test, debug and deploy.
 
-## Environment Configuration
+## Current Scope
 
-Create `.env` from the example:
+CloudRAG currently focuses on:
 
-```powershell
-Copy-Item .env.example .env
-```
+- Document-grounded question answering
+- Source citations
+- Spreadsheet analysis
+- Document comparison
+- Retrieval evaluation
+- Production-style authentication and security
+- Local and cloud deployment
 
-Generate a JWT secret:
+Potential future work could include OCR for scanned documents, richer evaluation datasets, background job queues, advanced observability, and more document formats.
 
-```powershell
-python -c "import secrets; print(secrets.token_urlsafe(48))"
-```
+## License
 
-Put the generated value into:
-
-```env
-JWT_SECRET_KEY=your-generated-secret
-```
-
-Never commit `.env`.
-
-# Run with Docker Compose
-
-Start the complete application:
-
-```powershell
-docker compose up -d --build
-```
-
-Check the containers:
-
-```powershell
-docker compose ps
-```
-
-Expected services:
-
-```text
-cloudrag-postgres
-cloudrag-backend
-cloudrag-frontend
-```
-
-Frontend:
-
-```text
-http://localhost:5173
-```
-
-Backend API:
-
-```text
-http://localhost:8000
-```
-
-Swagger API documentation:
-
-```text
-http://localhost:8000/docs
-```
-
-# Public Cloud Deployment
-
-CloudRAG has a separate public cloud deployment designed so that the application can be accessed over the internet without using the developer's local Windows machine.
-
-## Public Application
-
-**Live application:**
-
-```text
-https://cloudrag-cyan.vercel.app/
-```
-
-## Cloud Architecture
-
-```text
-                         Internet
-                            |
-                  +---------+---------+
-                  |                   |
-                  v                   v
-          +---------------+   +---------------+
-          | Vercel        |   | Render        |
-          | React + Vite  |-->| FastAPI       |
-          | Frontend      |   | Backend       |
-          +---------------+   +-------+-------+
-                                      |
-                         +------------+------------+
-                         |                         |
-                         v                         v
-                +----------------+        +----------------+
-                | Supabase       |        | Gemini APIs    |
-                | PostgreSQL     |        | Embedding 2    |
-                | + pgvector     |        | 3.5 Flash-Lite |
-                +----------------+        +----------------+
-```
-
-### Cloud services
-
-| Service | Role | Cloud responsibility |
-|---|---|---|
-| Vercel | Frontend hosting | React + Vite production application |
-| Render | Backend hosting | FastAPI API, authentication, ingestion and RAG orchestration |
-| Supabase | Database | PostgreSQL + pgvector for users, documents, chunks, embeddings and chat data |
-| Gemini | AI services | Gemini Embedding 2 for embeddings and Gemini 3.5 Flash-Lite for answer generation |
-
-## Cloud AI Configuration
-
-The cloud deployment does not use Ollama. The cloud backend uses Gemini through environment variables such as:
-
-```text
-GEMINI_API_KEY
-GEMINI_MODEL=gemini-3.5-flash-lite
-GEMINI_EMBEDDING_MODEL=gemini-embedding-2
-GEMINI_API_BASE_URL=https://generativelanguage.googleapis.com/v1beta
-```
-
-The database connection is configured through `DATABASE_URL` and points to the Supabase Session Pooler, allowing the Render backend to reach the cloud PostgreSQL instance.
-
-The frontend is configured with the deployed backend API URL through `VITE_API_URL`, while the backend uses `FRONTEND_URL` for CORS configuration.
-
-## Deployment Isolation
-
-The public deployment is completely independent of the local development environment:
-
-```text
-Local PC                         Public Cloud
---------                         ------------
-Ollama + Qwen3 4B               Gemini APIs
-Sentence Transformers            Gemini Embedding 2
-Local PostgreSQL                 Supabase PostgreSQL
-Docker Desktop                   Render
-Local React                      Vercel
-```
-
-The public application therefore does **not** consume the local PC's CPU, GPU, RAM, Ollama instance, Docker containers, or local database. The Windows machine can be offline while the public application remains available, subject to the cloud providers' service availability and quotas.
-
-## Cloud Branch
-
-Cloud-specific changes are maintained separately from the stable local setup in:
-
-```text
-deployment/cloud-hosted
-```
-
-This keeps the local Ollama-based architecture intact while allowing the cloud deployment to use managed infrastructure and Gemini APIs.
-
-## Cloud Database
-
-The public application uses a separate Supabase PostgreSQL database with the `pgvector` extension. It is independent of the local Docker PostgreSQL database.
-
-The cloud database contains the same application schema and migrations but is not populated by copying the local development data. User accounts, documents, chunks, embeddings, and chat sessions created through the public application are stored in the cloud database.
-
-## Public Deployment Flow
-
-```text
-User opens https://cloudrag-cyan.vercel.app/
-                |
-                v
-        Vercel React frontend
-                |
-                v
-        Render FastAPI backend
-          /       |        \
-         /        |         \
-        v         v          v
-   Supabase    Gemini     JWT/Auth
-   pgvector     APIs       + RAG
-```
-
-The public deployment is intended for small-scale usage and portfolio/demo access. Service quotas, resource limits, cold starts, database capacity, and API rate limits depend on the respective cloud providers.
-
-# Local Development
-
-Start PostgreSQL and the frontend:
-
-```powershell
-docker compose up -d postgres frontend
-```
-
-Activate the virtual environment:
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-
-Start FastAPI:
-
-```powershell
-uvicorn backend.main:app --reload
-```
-
-Backend:
-
-```text
-http://127.0.0.1:8000
-```
-
-Frontend:
-
-```text
-http://localhost:5173
-```
-
-# API
-
-## Public endpoints
-
-```text
-GET /health
-GET /live
-GET /ready
-GET /metrics
-
-POST /auth/register
-POST /auth/login
-GET  /auth/me
-```
-
-## Protected document endpoints
-
-```text
-GET    /documents
-POST   /documents
-DELETE /documents/{document_id}
-```
-
-## Protected retrieval endpoints
-
-```text
-POST /search
-POST /ask
-```
-
-## Protected chat endpoints
-
-```text
-GET    /sessions
-POST   /sessions
-GET    /sessions/{session_id}/messages
-DELETE /sessions/{session_id}
-```
-
-Interactive local API documentation:
-
-```text
-http://localhost:8000/docs
-```
-
-The public frontend is available at:
-
-```text
-https://cloudrag-cyan.vercel.app/
-```
-
-# Authentication
-
-CloudRAG uses JWT-based authentication.
-
-```text
-Register/Login
-     |
-     v
-Password verification
-     |
-     v
-JWT access token
-     |
-     v
-Authorization: Bearer <token>
-     |
-     v
-Authenticated API request
-```
-
-Passwords are stored using salted `scrypt` password hashes.
-
-The backend derives the authenticated `user_id` from the JWT rather than accepting a client-supplied user identifier.
-
-Documents, chat sessions, messages, and retrieval results are scoped to the authenticated user.
-
-# Retrieval
-
-CloudRAG uses a hybrid retrieval strategy combining:
-
-1. Semantic vector similarity
-2. Keyword matching
-
-The resulting candidates are combined into a hybrid ranking before being supplied to the RAG layer.
-
-# RAG
-
-```text
-Question
-   |
-   v
-Query embedding
-   |
-   v
-Hybrid retrieval
-   |
-   v
-Relevant document chunks
-   |
-   v
-Conversation context
-   |
-   v
-Ollama
-   |
-   v
-Structured answer
-   |
-   v
-Answer + source citations
-```
-
-The RAG prompt instructs the configured model to answer using the supplied document excerpts rather than relying on outside knowledge. In local mode this is Qwen3 4B through Ollama; in cloud mode this is Gemini 3.5 Flash-Lite.
-
-# Monitoring
-
-### Liveness
-
-```text
-GET /live
-```
-
-Indicates whether the application process is alive.
-
-### Readiness
-
-```text
-GET /ready
-```
-
-Checks whether required dependencies are ready.
-
-### Health
-
-```text
-GET /health
-```
-
-Reports application and dependency health.
-
-### Metrics
-
-```text
-GET /metrics
-```
-
-Exposes Prometheus-compatible metrics.
-
-Tracked metrics include HTTP request activity, HTTP latency, document ingestion, and LLM generation latency.
-
-# Testing
-
-Run the complete test suite:
-
-```powershell
-pytest -q
-```
-
-Current test suite:
-
-```text
-11 passed
-```
-
-GitHub Actions also runs the Python test suite automatically for pushes and pull requests targeting `main`.
-
-# Docker Services
-
-| Service | Purpose | Port |
-|---|---|---:|
-| frontend | React application served by Nginx | 5173 |
-| backend | FastAPI API and RAG orchestration | 8000 |
-| postgres | PostgreSQL + pgvector | 5432 |
-| Ollama | Local LLM inference | 11434 |
-
-Ollama intentionally remains on the Windows host while the application services run in Docker.
-
-The backend reaches the host Ollama instance through:
-
-```text
-http://host.docker.internal:11434
-```
-
-# Data Persistence
-
-PostgreSQL uses a Docker named volume:
-
-```text
-postgres_data
-```
-
-This preserves application data across normal container recreation.
-
-Do not use:
-
-```powershell
-docker compose down -v
-```
-
-unless you intentionally want to delete the database volume and all stored data.
-
-# Deployment Model
-
-CloudRAG supports both a local development stack and a public cloud deployment.
-
-### Local
-
-The local stack uses:
-
-- PostgreSQL + pgvector
-- Sentence Transformer embeddings
-- Ollama
-- Qwen3 4B
-- Docker + Docker Compose
-- React + Vite + Nginx
-
-### Public Cloud
-
-The public stack uses:
-
-- Vercel
-- Render
-- Supabase PostgreSQL + pgvector
-- Gemini Embedding 2
-- Gemini 3.5 Flash-Lite
-
-The two environments are intentionally separated. The public deployment does not consume the local PC's CPU, GPU, Ollama instance, Docker containers, or local database.
-
-# Current Deployment Model
-
-### Local
-
-```text
-Windows Host
-│
-├── Ollama
-│   └── qwen3:4b
-│
-└── Docker Desktop
-    │
-    ├── PostgreSQL + pgvector
-    ├── FastAPI backend
-    └── React + Nginx
-```
-
-### Public Cloud
-
-```text
-Internet
-│
-├── Vercel
-│   └── React + Vite frontend
-│
-└── Render
-    └── FastAPI backend
-        ├── Supabase PostgreSQL + pgvector
-        └── Gemini APIs
-```
-
-Public application:
-
-**https://cloudrag-cyan.vercel.app/**
-
-The public deployment is independent of the local Windows machine.
-
-# Engineering Goals
-
-CloudRAG was built to demonstrate practical experience across:
-
-- Backend API development
-- REST API design
-- Authentication
-- Database design
-- PostgreSQL
-- Vector databases
-- Retrieval-Augmented Generation
-- Embeddings
-- Local and cloud LLM inference
-- Hybrid search
-- Frontend development
-- Docker
-- Container orchestration
-- Health monitoring
-- Metrics
-- Automated testing
-- CI/CD
-- Application architecture
-- Data isolation and ownership
-
-# Future Improvements
-
-Potential next-stage improvements include:
-
-- Background ingestion workers
-- Async document processing
-- Reranking models
-- Redis-backed job queues
-- Distributed tracing
-- Advanced document metadata
-- More sophisticated access-control policies
-- Horizontal scaling
-- Streaming LLM responses
-- Evaluation datasets and RAG quality benchmarks
-
-These are intentionally outside the current core implementation.
-
-# License
-
-This project is currently intended as a personal learning and portfolio project.
-
-
-## Original Document Storage
-
-CloudRAG retains the original uploaded file separately from its parsed RAG data.
-
-For the public cloud deployment:
-
-```text
-User upload
-    ↓
-Render FastAPI
-    ↓
-Supabase Storage
-    └── original file
-    ↓
-Supabase PostgreSQL
-    ├── document metadata
-    ├── extracted chunks
-    └── embeddings
-```
-
-The storage bucket is private. Original files are never exposed through a public bucket URL. Authenticated users download their own files through the protected API endpoint:
-
-```text
-GET /documents/{document_id}/download
-```
-
-Each stored object uses a user-scoped path, and document deletion removes both the database record and the stored original file.
-
-For local development, `STORAGE_BACKEND=local` stores originals under the configured local storage directory. The cloud deployment uses `STORAGE_BACKEND=supabase` with Supabase Storage.
-
-## Document Processing Lifecycle
-
-Document uploads are queued for background processing rather than blocking the upload request until parsing and embedding finish. Each document exposes processing state and progress through the API and UI:
-
-```text
-Pending → Parsing → Chunking → Embedding → Completed
-                                      └────→ Failed
-```
-
-Failed documents retain their original stored file and can be retried from the Knowledge Base.
-
-
-### Streaming responses
-
-Cloud chat supports Server-Sent Events (SSE) for assistant responses. The frontend progressively renders Gemini output while the backend preserves the final answer and citations in the existing chat history.
-
-## RAG evaluation
-
-The cloud deployment includes a lightweight, user-scoped RAG evaluation runner. It accepts 1–10 reference cases and measures retrieval hit rate (when expected document IDs are supplied), reference-answer token coverage, exact-match rate, and latency. It does not call a separate LLM judge; each case runs through the existing RAG pipeline.
+CloudRAG is licensed under the MIT License
