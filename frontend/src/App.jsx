@@ -10,6 +10,7 @@ import {
   getHealth,
   streamAskQuestion,
   downloadDocument,
+  compareDocuments,
 } from "./api";
 
 function formatFileSize(bytes) {
@@ -85,6 +86,10 @@ const [knowledgeOpen, setKnowledgeOpen] = useState(false);
 const [selectedCitation, setSelectedCitation] = useState(null);
 const [systemOpen, setSystemOpen] = useState(false);
 const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+const [comparisonOpen, setComparisonOpen] = useState(false);
+const [comparisonLoading, setComparisonLoading] = useState(false);
+const [comparisonResult, setComparisonResult] = useState(null);
+const [comparisonError, setComparisonError] = useState("");
 
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
@@ -588,6 +593,26 @@ async function askQuestion() {
     setAskError(error.message);
   } finally {
     setAsking(false);
+  }
+}
+
+ async function runDocumentComparison() {
+  if (selectedDocumentIds.length !== 2 || comparisonLoading) {
+    return;
+  }
+
+  setComparisonOpen(true);
+  setComparisonLoading(true);
+  setComparisonResult(null);
+  setComparisonError("");
+
+  try {
+    const result = await compareDocuments(selectedDocumentIds);
+    setComparisonResult(result);
+  } catch (error) {
+    setComparisonError(error.message);
+  } finally {
+    setComparisonLoading(false);
   }
 }
 
@@ -1448,6 +1473,74 @@ async function askQuestion() {
         </div>
       </section>
 
+      {comparisonOpen && (
+        <div className="comparison-overlay" onClick={() => setComparisonOpen(false)}>
+          <section className="comparison-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="comparison-header">
+              <div>
+                <h2>Document comparison</h2>
+                <p>Evidence-based comparison of the two selected documents.</p>
+              </div>
+              <button
+                type="button"
+                className="panel-close"
+                onClick={() => setComparisonOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="comparison-body">
+              {comparisonLoading && (
+                <div className="comparison-loading">
+                  <div className="loading-spinner" />
+                  Comparing the selected documents...
+                </div>
+              )}
+
+              {comparisonError && (
+                <div className="panel-error">{comparisonError}</div>
+              )}
+
+              {comparisonResult && (
+                <>
+                  <div className="comparison-documents">
+                    {comparisonResult.documents.map((document) => (
+                      <div className="comparison-document" key={document.id}>
+                        <span>Document</span>
+                        <strong title={document.filename}>{document.filename}</strong>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="comparison-answer">
+                    {comparisonResult.answer}
+                  </div>
+
+                  {comparisonResult.citations?.length > 0 && (
+                    <div className="comparison-sources">
+                      <h3>Evidence used</h3>
+                      {comparisonResult.citations.map((citation, index) => (
+                        <button
+                          type="button"
+                          className="comparison-source"
+                          key={`${citation.document_id}-${citation.chunk_id}`}
+                          onClick={() => setSelectedCitation({ ...citation, number: index + 1 })}
+                        >
+                          <span>{index + 1}</span>
+                          <strong>{citation.filename}</strong>
+                          <small>Chunk {citation.chunk_index}</small>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
+
       {selectedCitation && (
         <>
           <button
@@ -1600,6 +1693,16 @@ async function askQuestion() {
               <span>
                 {selectedDocumentIds.length} selected
               </span>
+
+              <button
+                type="button"
+                className="compare-button"
+                onClick={runDocumentComparison}
+                disabled={selectedDocumentIds.length !== 2 || comparisonLoading}
+                title="Select exactly two completed documents to compare"
+              >
+                {comparisonLoading ? "Comparing..." : "Compare"}
+              </button>
             </div>
 
             <div className="knowledge-list">

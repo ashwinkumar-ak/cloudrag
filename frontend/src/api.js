@@ -305,6 +305,14 @@ export async function streamAskQuestion(
   }
 }
 
+
+export async function compareDocuments(documentIds) {
+  return apiFetch("/documents/compare", {
+    method: "POST",
+    body: JSON.stringify({ document_ids: documentIds }),
+  });
+}
+
 export async function askQuestion(
   question,
   limit = 3,

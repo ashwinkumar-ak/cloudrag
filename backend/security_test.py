@@ -44,3 +44,17 @@ def test_oversized_upload_is_rejected_before_upload_processing(monkeypatch):
 
     assert response.status_code == 413
     assert "too large" in response.json()["detail"].lower()
+
+
+def test_compare_rate_limit_constants():
+    from backend.security import COMPARE_LIMIT, COMPARE_WINDOW
+
+    assert COMPARE_LIMIT == 10
+    assert COMPARE_WINDOW == 60
+
+
+def test_compare_rate_limit_constants():
+    from backend.security import COMPARE_LIMIT, COMPARE_WINDOW
+
+    assert COMPARE_LIMIT == 10
+    assert COMPARE_WINDOW == 60

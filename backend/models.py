@@ -148,3 +148,21 @@ class LoginResponse(BaseModel):
     access_token: str
     token_type: str
     user: UserResponse
+
+class CompareRequest(BaseModel):
+    document_ids: list[int] = Field(min_length=2, max_length=2)
+
+
+class CompareCitation(BaseModel):
+    chunk_id: int
+    document_id: int
+    filename: str
+    chunk_index: int
+    content: str
+    distance: float
+
+
+class CompareResponse(BaseModel):
+    answer: str
+    citations: list[CompareCitation]
+    documents: list[dict]

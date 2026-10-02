@@ -3362,3 +3362,195 @@ input {
     max-width: min(230px, 85vw);
   }
 }
+
+/* =========================================================
+   DOCUMENT COMPARISON
+   ========================================================= */
+
+.compare-button {
+  border: 1px solid var(--cr-border-strong);
+  border-radius: 8px;
+  padding: 7px 12px;
+  background: var(--cr-surface);
+  color: var(--cr-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.compare-button:hover:not(:disabled) {
+  background: var(--cr-surface-hover);
+}
+
+.compare-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.comparison-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.comparison-panel {
+  width: min(900px, 100%);
+  max-height: min(82vh, 900px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--cr-surface);
+  color: var(--cr-text);
+  border: 1px solid var(--cr-border);
+  border-radius: 16px;
+  box-shadow: var(--cr-shadow);
+}
+
+.comparison-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 22px;
+  border-bottom: 1px solid var(--cr-border);
+}
+
+.comparison-header h2 {
+  margin: 0 0 5px;
+}
+
+.comparison-header p {
+  margin: 0;
+  color: var(--cr-text-muted);
+  font-size: 13px;
+}
+
+.comparison-body {
+  overflow-y: auto;
+  padding: 22px;
+}
+
+.comparison-loading {
+  min-height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--cr-text-soft);
+}
+
+.comparison-documents {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.comparison-document {
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--cr-border);
+  border-radius: 10px;
+  background: var(--cr-surface-soft);
+}
+
+.comparison-document span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--cr-text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.comparison-document strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comparison-answer {
+  white-space: pre-wrap;
+  line-height: 1.65;
+  font-size: 14px;
+}
+
+.comparison-sources {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--cr-border);
+}
+
+.comparison-sources h3 {
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+
+.comparison-source {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 7px;
+  padding: 9px 10px;
+  border: 1px solid var(--cr-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--cr-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.comparison-source:hover {
+  background: var(--cr-surface-hover);
+}
+
+.comparison-source span {
+  font-weight: 700;
+}
+
+.comparison-source strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comparison-source small {
+  color: var(--cr-text-muted);
+}
+
+@media (max-width: 640px) {
+  .comparison-overlay {
+    padding: 10px;
+  }
+
+  .comparison-panel {
+    max-height: 92vh;
+    border-radius: 12px;
+  }
+
+  .comparison-documents {
+    grid-template-columns: 1fr;
+  }
+
+  .comparison-body,
+  .comparison-header {
+    padding: 16px;
+  }
+
+  .comparison-source {
+    grid-template-columns: 26px minmax(0, 1fr);
+  }
+
+  .comparison-source small {
+    grid-column: 2;
+  }
+}

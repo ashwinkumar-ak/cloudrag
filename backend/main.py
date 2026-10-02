@@ -51,10 +51,13 @@ from backend.models import (
     RegisterRequest,
     SearchRequest,
     SearchResult,
+    CompareRequest,
+    CompareResponse,
     SessionResponse,
     UserResponse,
 )
 from backend.rag import RAGService
+from backend.comparison import DocumentComparisonService
 from backend.storage import DocumentStorage, StorageError
 from backend.repositories.chunks import ChunkRepository
 from backend.repositories.documents import DocumentRepository
@@ -69,6 +72,8 @@ from backend.security import (
     GENERAL_WINDOW,
     SEARCH_LIMIT,
     SEARCH_WINDOW,
+    COMPARE_LIMIT,
+    COMPARE_WINDOW,
     UPLOAD_LIMIT,
     UPLOAD_WINDOW,
     get_client_identifier,
@@ -81,6 +86,7 @@ chunk_repository = ChunkRepository()
 document_repository = DocumentRepository()
 ingestion_service = IngestionService()
 rag_service = RAGService()
+comparison_service = DocumentComparisonService()
 chat_repository = ChatRepository()
 user_repository = UserRepository()
 document_storage = DocumentStorage()
@@ -126,6 +132,11 @@ async def security_middleware(request, call_next):
         window = ASK_WINDOW
         key = f"ask:{client_id}"
         message = "Too many RAG requests. Please try again later."
+    elif path == "/documents/compare":
+        limit = COMPARE_LIMIT
+        window = COMPARE_WINDOW
+        key = f"compare:{client_id}"
+        message = "Too many comparison requests. Please try again later."
     elif path == "/search":
         limit = SEARCH_LIMIT
         window = SEARCH_WINDOW
@@ -756,6 +767,45 @@ def retry_document(
         created_at=updated[8],
         updated_at=updated[9],
     )
+
+
+@app.post(
+    "/documents/compare",
+    response_model=CompareResponse,
+)
+def compare_documents(
+    request: CompareRequest,
+    user_id: int = Depends(get_current_user_id),
+):
+    if len(request.document_ids) != 2 or request.document_ids[0] == request.document_ids[1]:
+        raise HTTPException(
+            status_code=400,
+            detail="Select exactly two different documents to compare.",
+        )
+
+    rows = [
+        document_repository.get_document(document_id, user_id)
+        for document_id in request.document_ids
+    ]
+
+    if any(row is None for row in rows):
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    if any(row[4] != "completed" for row in rows):
+        raise HTTPException(
+            status_code=409,
+            detail="Both documents must finish processing before they can be compared.",
+        )
+
+    try:
+        return comparison_service.compare(
+            document_ids=request.document_ids,
+            user_id=user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except LLMGenerationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 # ---------------------------------------------------------------------------
