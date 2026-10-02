@@ -48,7 +48,9 @@ class LLMService:
                             }
                         ],
                         "generationConfig": {
-                            "temperature": 0,
+                            "thinkingConfig": {
+                                "thinkingLevel": "minimal"
+                            },
                             "maxOutputTokens": max_output_tokens,
                             "responseMimeType": (
                                 "application/json"
@@ -162,8 +164,10 @@ class LLMService:
                             }
                         ],
                         "generationConfig": {
-                            "temperature": 0,
-                            "maxOutputTokens": 180,
+                            "thinkingConfig": {
+                                "thinkingLevel": "minimal"
+                            },
+                            "maxOutputTokens": 512,
                         },
                     },
                     timeout=120,
