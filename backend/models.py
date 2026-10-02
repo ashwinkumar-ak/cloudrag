@@ -9,6 +9,9 @@ class Document(BaseModel):
     content_type: str
     file_size: int
     status: str
+    processing_stage: str
+    processing_progress: int
+    error_message: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -99,6 +102,7 @@ class ChatMessageResponse(BaseModel):
     session_id: int
     role: str
     content: str
+    citations: list[Citation] = Field(default_factory=list)
     created_at: datetime
 
 
@@ -144,3 +148,21 @@ class LoginResponse(BaseModel):
     access_token: str
     token_type: str
     user: UserResponse
+
+class CompareRequest(BaseModel):
+    document_ids: list[int] = Field(min_length=2, max_length=2)
+
+
+class CompareCitation(BaseModel):
+    chunk_id: int
+    document_id: int
+    filename: str
+    chunk_index: int
+    content: str
+    distance: float
+
+
+class CompareResponse(BaseModel):
+    answer: str
+    citations: list[CompareCitation]
+    documents: list[dict]

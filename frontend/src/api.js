@@ -1,4 +1,5 @@
-const API_URL = "http://127.0.0.1:8000";
+const API_URL =
+  import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 const TOKEN_KEY = "cloudrag_access_token";
 
@@ -131,6 +132,63 @@ export async function deleteDocument(documentId) {
   });
 }
 
+export async function downloadDocument(documentId) {
+  const token = getToken();
+
+  const response = await fetch(
+    `${API_URL}/documents/${documentId}/download`,
+    {
+      headers: token
+        ? {
+            Authorization: `Bearer ${token}`,
+          }
+        : {},
+    }
+  );
+
+  if (!response.ok) {
+    let message = `Download failed with status ${response.status}.`;
+
+    try {
+      const data = await response.json();
+
+      if (data?.detail) {
+        message = data.detail;
+      }
+    } catch {
+      // Keep the generic download error.
+    }
+
+    throw new Error(message);
+  }
+
+  const blob = await response.blob();
+
+  const disposition =
+    response.headers.get("Content-Disposition") || "";
+
+  const filenameMatch = disposition.match(
+    /filename\*=UTF-8''([^;]+)/i
+  );
+
+  const filename = filenameMatch
+    ? decodeURIComponent(filenameMatch[1])
+    : "document";
+
+  const objectUrl = URL.createObjectURL(blob);
+
+  try {
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 export async function searchDocuments(
   query,
   limit = 5,
@@ -143,6 +201,115 @@ export async function searchDocuments(
       limit,
       document_ids: documentIds,
     }),
+  });
+}
+
+export async function streamAskQuestion(
+  question,
+  limit = 3,
+  documentIds = [],
+  sessionId = null,
+  onEvent
+) {
+  const token = getToken();
+
+  const response = await fetch(`${API_URL}/ask/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token
+        ? { Authorization: `Bearer ${token}` }
+        : {}),
+    },
+    body: JSON.stringify({
+      question,
+      limit,
+      document_ids: documentIds,
+      session_id: sessionId,
+    }),
+  });
+
+  if (!response.ok) {
+    let message = `Request failed with status ${response.status}.`;
+
+    try {
+      const data = await response.json();
+      if (data?.detail) {
+        message = data.detail;
+      }
+    } catch {
+      // Keep the generic error.
+    }
+
+    if (response.status === 401) {
+      clearToken();
+      window.dispatchEvent(new Event("cloudrag-auth-expired"));
+    }
+
+    throw new Error(message);
+  }
+
+  if (!response.body) {
+    throw new Error("Streaming is not supported by this browser.");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  function processEvent(rawEvent) {
+    const lines = rawEvent.split("\n");
+    let eventName = "message";
+    let data = "";
+
+    for (const line of lines) {
+      if (line.startsWith("event:")) {
+        eventName = line.slice(6).trim();
+      } else if (line.startsWith("data:")) {
+        data += line.slice(5).trim();
+      }
+    }
+
+    if (!data) {
+      return;
+    }
+
+    try {
+      onEvent(eventName, JSON.parse(data));
+    } catch {
+      // Ignore malformed SSE events.
+    }
+  }
+
+  while (true) {
+    const { value, done } = await reader.read();
+
+    buffer += decoder.decode(value || new Uint8Array(), {
+      stream: !done,
+    });
+
+    const events = buffer.split("\n\n");
+    buffer = events.pop() || "";
+
+    for (const event of events) {
+      processEvent(event);
+    }
+
+    if (done) {
+      break;
+    }
+  }
+
+  if (buffer.trim()) {
+    processEvent(buffer);
+  }
+}
+
+
+export async function compareDocuments(documentIds) {
+  return apiFetch("/documents/compare", {
+    method: "POST",
+    body: JSON.stringify({ document_ids: documentIds }),
   });
 }
 

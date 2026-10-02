@@ -21,6 +21,20 @@ class Settings(BaseSettings):
 
     jwt_access_token_expire_minutes: int = 1440
 
+    frontend_url: str = "http://localhost:5173"
+
+    max_upload_size_bytes: int = 20 * 1024 * 1024
+
+    security_headers_enabled: bool = True
+
+    storage_backend: str = "local"
+    local_storage_path: str = "./storage"
+    supabase_url: str | None = None
+    supabase_service_role_key: str | None = None
+    supabase_storage_bucket: str = "documents"
+
+    ollama_base_url: str = "http://localhost:11434"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

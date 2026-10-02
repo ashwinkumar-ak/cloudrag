@@ -1,6 +1,10 @@
 import time
+from pathlib import Path
+from uuid import uuid4
+from urllib.parse import quote
 
 from fastapi import (
+    BackgroundTasks,
     Depends,
     FastAPI,
     File,
@@ -10,6 +14,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi import Response
+from fastapi.responses import JSONResponse, StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST
 
 from backend.auth import (
@@ -23,6 +28,7 @@ from backend.document_parser import (
     DocumentParseError,
     extract_text,
 )
+from backend.spreadsheet import parse_spreadsheet
 from backend.embedding import EmbeddingService
 from backend.health import get_health_status, is_ready
 from backend.ingestion import IngestionService
@@ -45,14 +51,34 @@ from backend.models import (
     RegisterRequest,
     SearchRequest,
     SearchResult,
+    CompareRequest,
+    CompareResponse,
     SessionResponse,
     UserResponse,
 )
 from backend.rag import RAGService
+from backend.comparison import DocumentComparisonService
+from backend.storage import DocumentStorage, StorageError
 from backend.repositories.chunks import ChunkRepository
 from backend.repositories.documents import DocumentRepository
 from backend.repositories.chat import ChatRepository
 from backend.repositories.users import UserRepository
+from backend.security import (
+    ASK_LIMIT,
+    ASK_WINDOW,
+    AUTH_LIMIT,
+    AUTH_WINDOW,
+    GENERAL_LIMIT,
+    GENERAL_WINDOW,
+    SEARCH_LIMIT,
+    SEARCH_WINDOW,
+    COMPARE_LIMIT,
+    COMPARE_WINDOW,
+    UPLOAD_LIMIT,
+    UPLOAD_WINDOW,
+    get_client_identifier,
+    rate_limiter,
+)
 
 
 embedding_service = EmbeddingService()
@@ -60,8 +86,10 @@ chunk_repository = ChunkRepository()
 document_repository = DocumentRepository()
 ingestion_service = IngestionService()
 rag_service = RAGService()
+comparison_service = DocumentComparisonService()
 chat_repository = ChatRepository()
 user_repository = UserRepository()
+document_storage = DocumentStorage()
 
 bearer_scheme = HTTPBearer(
     auto_error=False,
@@ -73,6 +101,28 @@ app = FastAPI(
     description="Production-style document intelligence and RAG API",
     version="0.1.0",
 )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request, exc):
+    # Keep API failures readable by browser clients even when an unexpected
+    # exception occurs. Without this, Starlette's error response can bypass
+    # the normal CORS response path and browsers report only "Failed to fetch".
+    origin = request.headers.get("origin")
+    headers = {}
+
+    if origin and origin == settings.frontend_url:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+        headers["Vary"] = "Origin"
+
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "An unexpected server error occurred while processing the request."
+        },
+        headers=headers,
+    )
 
 
 @app.middleware("http")
@@ -89,9 +139,100 @@ async def metrics_middleware(request, call_next):
     return response
 
 
+@app.middleware("http")
+async def security_middleware(request, call_next):
+    client_id = get_client_identifier(request)
+    path = request.url.path
+
+    if path in {"/auth/login", "/auth/register"}:
+        limit = AUTH_LIMIT
+        window = AUTH_WINDOW
+        key = f"auth:{client_id}"
+        message = "Too many authentication attempts. Please try again later."
+    elif path in {"/ask", "/ask/stream"}:
+        limit = ASK_LIMIT
+        window = ASK_WINDOW
+        key = f"ask:{client_id}"
+        message = "Too many RAG requests. Please try again later."
+    elif path == "/documents/compare":
+        limit = COMPARE_LIMIT
+        window = COMPARE_WINDOW
+        key = f"compare:{client_id}"
+        message = "Too many comparison requests. Please try again later."
+    elif path == "/search":
+        limit = SEARCH_LIMIT
+        window = SEARCH_WINDOW
+        key = f"search:{client_id}"
+        message = "Too many search requests. Please try again later."
+    elif path == "/documents" and request.method == "POST":
+        limit = UPLOAD_LIMIT
+        window = UPLOAD_WINDOW
+        key = f"upload:{client_id}"
+        message = "Too many document uploads. Please try again later."
+    else:
+        limit = GENERAL_LIMIT
+        window = GENERAL_WINDOW
+        key = f"general:{client_id}"
+        message = "Too many requests. Please try again later."
+
+    if not rate_limiter.allow(key, limit, window):
+        response = JSONResponse(
+            status_code=429,
+            content={"detail": message},
+            headers={"Retry-After": str(window)},
+        )
+    else:
+        content_length = request.headers.get("content-length")
+
+        if (
+            content_length
+            and path == "/documents"
+            and request.method == "POST"
+        ):
+            try:
+                content_length_value = int(content_length)
+            except ValueError:
+                response = JSONResponse(
+                    status_code=400,
+                    content={"detail": "Invalid Content-Length header."},
+                )
+            else:
+                # Multipart/form-data has small framing overhead.
+                max_request_bytes = settings.max_upload_size_bytes + (1024 * 1024)
+
+                if content_length_value > max_request_bytes:
+                    response = JSONResponse(
+                        status_code=413,
+                        content={
+                            "detail": "Uploaded file is too large. Maximum file size is 20 MB."
+                        },
+                    )
+                else:
+                    response = await call_next(request)
+        else:
+            response = await call_next(request)
+
+    rate_limiter.cleanup()
+
+    if settings.security_headers_enabled:
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = (
+            "camera=(), microphone=(), geolocation=()"
+        )
+
+        if settings.environment.lower() == "production":
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
+
+    return response
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[settings.frontend_url],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -276,6 +417,64 @@ def get_current_user(
 
 
 # ---------------------------------------------------------------------------
+# Background document processing
+# ---------------------------------------------------------------------------
+
+
+def process_uploaded_document(
+    document_id: int,
+    storage_path: str,
+    filename: str,
+    content_type: str,
+) -> None:
+    try:
+        document_repository.update_progress(
+            document_id=document_id,
+            status="processing",
+            stage="parsing",
+            progress=10,
+            error_message=None,
+        )
+
+        document_storage_content = document_storage.download(storage_path)
+
+        spreadsheet_rows = None
+        if Path(filename).suffix.lower() in {".xlsx", ".xlsm", ".csv"}:
+            spreadsheet_rows = parse_spreadsheet(
+                filename=filename,
+                content=document_storage_content,
+            )
+
+        text = extract_text(
+            filename=filename,
+            content=document_storage_content,
+        )
+
+        if not text.strip():
+            raise DocumentParseError(
+                "No readable text was found in the document."
+            )
+
+        ingestion_service.process_document(
+            document_id=document_id,
+            text=text,
+            spreadsheet_rows=spreadsheet_rows,
+        )
+    except Exception as exc:
+        message = str(exc).strip() or "Document processing failed."
+        try:
+            document_repository.update_progress(
+                document_id=document_id,
+                status="failed",
+                stage="failed",
+                progress=0,
+                error_message=message[:1000],
+            )
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------------
 # Documents
 # ---------------------------------------------------------------------------
 
@@ -298,8 +497,11 @@ def list_documents(
             content_type=row[2],
             file_size=row[3],
             status=row[4],
-            created_at=row[5],
-            updated_at=row[6],
+            processing_stage=row[5],
+            processing_progress=row[6],
+            error_message=row[7],
+            created_at=row[8],
+            updated_at=row[9],
         )
         for row in rows
     ]
@@ -330,8 +532,11 @@ def get_document(
         content_type=row[2],
         file_size=row[3],
         status=row[4],
-        created_at=row[5],
-        updated_at=row[6],
+        processing_stage=row[5],
+        processing_progress=row[6],
+        error_message=row[7],
+        created_at=row[8],
+        updated_at=row[9],
     )
 
 
@@ -342,6 +547,20 @@ def delete_document(
     document_id: int,
     user_id: int = Depends(get_current_user_id),
 ):
+    storage_path = document_repository.get_storage_path(
+        document_id=document_id,
+        user_id=user_id,
+    )
+
+    if storage_path:
+        try:
+            document_storage.delete(storage_path)
+        except StorageError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=str(exc),
+            ) from exc
+
     deleted = document_repository.delete_document(
         document_id=document_id,
         user_id=user_id,
@@ -359,10 +578,63 @@ def delete_document(
     }
 
 
+@app.get(
+    "/documents/{document_id}/download",
+)
+def download_document(
+    document_id: int,
+    user_id: int = Depends(get_current_user_id),
+):
+    row = document_repository.get_document(
+        document_id=document_id,
+        user_id=user_id,
+    )
+
+    if not row:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found",
+        )
+
+    storage_path = document_repository.get_storage_path(
+        document_id=document_id,
+        user_id=user_id,
+    )
+
+    if not storage_path:
+        raise HTTPException(
+            status_code=404,
+            detail="Original document file is not available.",
+        )
+
+    try:
+        content = document_storage.download(storage_path)
+    except StorageError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=str(exc),
+        ) from exc
+
+    filename = Path(row[1]).name
+    encoded_filename = quote(filename)
+
+    return StreamingResponse(
+        iter([content]),
+        media_type=row[2] or "application/octet-stream",
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename*=UTF-8''{encoded_filename}"
+            )
+        },
+    )
+
+
 @app.post(
     "/documents",
+    status_code=202,
 )
 async def upload_document(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     user_id: int = Depends(get_current_user_id),
 ):
@@ -372,7 +644,14 @@ async def upload_document(
             detail="Filename is required",
         )
 
+    filename = Path(file.filename).name
     content = await file.read()
+
+    if len(content) > settings.max_upload_size_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail="Uploaded file is too large. Maximum file size is 20 MB.",
+        )
 
     if not content:
         raise HTTPException(
@@ -380,46 +659,182 @@ async def upload_document(
             detail="Document must not be empty",
         )
 
+    content_type = (
+        file.content_type
+        or "application/octet-stream"
+    )
+
+    storage_path = (
+        f"users/{user_id}/"
+        f"{uuid4().hex}-{filename}"
+    )
+
     try:
-        text = extract_text(
-            filename=file.filename,
+        document_storage.upload(
+            path=storage_path,
             content=content,
+            content_type=content_type,
         )
-    except DocumentParseError as exc:
+    except StorageError as exc:
         raise HTTPException(
-            status_code=400,
+            status_code=502,
             detail=str(exc),
         ) from exc
 
-    if not text.strip():
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "No readable text was found in the document."
-            ),
+    try:
+        document_id = document_repository.create_document(
+            user_id=user_id,
+            filename=filename,
+            content_type=content_type,
+            file_size=len(content),
+            storage_path=storage_path,
         )
 
-    try:
-        document_id = ingestion_service.ingest_text(
-            user_id=user_id,
-            filename=file.filename,
-            content_type=(
-                file.content_type
-                or "application/octet-stream"
-            ),
-            text=text,
+        background_tasks.add_task(
+            process_uploaded_document,
+            document_id,
+            storage_path,
+            filename,
+            content_type,
         )
     except Exception as exc:
+        try:
+            document_storage.delete(storage_path)
+        except StorageError:
+            pass
+
         raise HTTPException(
             status_code=500,
-            detail=f"Document ingestion failed: {exc}",
+            detail="Document could not be queued for processing.",
         ) from exc
 
     return {
         "document_id": document_id,
-        "filename": file.filename,
-        "status": "completed",
+        "filename": filename,
+        "status": "pending",
+        "processing_stage": "pending",
+        "processing_progress": 0,
+        "storage": "stored",
     }
+
+
+@app.post(
+    "/documents/{document_id}/retry",
+    response_model=Document,
+    status_code=202,
+)
+def retry_document(
+    document_id: int,
+    background_tasks: BackgroundTasks,
+    user_id: int = Depends(get_current_user_id),
+):
+    row = document_repository.get_document(
+        document_id=document_id,
+        user_id=user_id,
+    )
+
+    if not row:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found",
+        )
+
+    if row[4] != "failed":
+        raise HTTPException(
+            status_code=409,
+            detail="Only failed documents can be retried.",
+        )
+
+    storage_path = document_repository.get_storage_path(
+        document_id=document_id,
+        user_id=user_id,
+    )
+
+    if not storage_path:
+        raise HTTPException(
+            status_code=404,
+            detail="Original document file is not available.",
+        )
+
+    document_repository.update_progress(
+        document_id=document_id,
+        status="pending",
+        stage="pending",
+        progress=0,
+        error_message=None,
+    )
+
+    background_tasks.add_task(
+        process_uploaded_document,
+        document_id,
+        storage_path,
+        row[1],
+        row[2],
+    )
+
+    updated = document_repository.get_document(
+        document_id=document_id,
+        user_id=user_id,
+    )
+
+    return Document(
+        id=updated[0],
+        filename=updated[1],
+        content_type=updated[2],
+        file_size=updated[3],
+        status=updated[4],
+        processing_stage=updated[5],
+        processing_progress=updated[6],
+        error_message=updated[7],
+        created_at=updated[8],
+        updated_at=updated[9],
+    )
+
+
+@app.post(
+    "/documents/compare",
+    response_model=CompareResponse,
+)
+def compare_documents(
+    request: CompareRequest,
+    user_id: int = Depends(get_current_user_id),
+):
+    if len(request.document_ids) != 2 or request.document_ids[0] == request.document_ids[1]:
+        raise HTTPException(
+            status_code=400,
+            detail="Select exactly two different documents to compare.",
+        )
+
+    rows = [
+        document_repository.get_document(document_id, user_id)
+        for document_id in request.document_ids
+    ]
+
+    if any(row is None for row in rows):
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    if any(row[4] != "completed" for row in rows):
+        raise HTTPException(
+            status_code=409,
+            detail="Both documents must finish processing before they can be compared.",
+        )
+
+    try:
+        return comparison_service.compare(
+            document_ids=request.document_ids,
+            user_id=user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except LLMGenerationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:
+        # Return a controlled API error instead of an unhandled 500. This also
+        # lets the CORS middleware expose the response to the Vercel frontend.
+        raise HTTPException(
+            status_code=500,
+            detail="Document comparison failed. Check the Render logs for the underlying error.",
+        ) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -557,6 +972,7 @@ def ask(
             user_id=user_id,
             role="assistant",
             content=answer,
+            citations=context,
         )
 
         return AskResponse(
@@ -574,6 +990,133 @@ def ask(
     finally:
         duration = time.perf_counter() - start
         RAG_REQUEST_LATENCY.observe(duration)
+
+
+@app.post("/ask/stream")
+def ask_stream(
+    request: AskRequest,
+    user_id: int = Depends(get_current_user_id),
+):
+    """Stream an answer as Server-Sent Events (SSE)."""
+    start = time.perf_counter()
+    RAG_REQUEST_COUNT.inc()
+
+    session_id = request.session_id
+
+    if session_id is not None:
+        existing_session = chat_repository.get_session(
+            session_id=session_id,
+            user_id=user_id,
+        )
+
+        if not existing_session:
+            raise HTTPException(
+                status_code=404,
+                detail="Session not found",
+            )
+
+    try:
+        context, answer_chunks = rag_service.answer_stream(
+            question=request.question,
+            user_id=user_id,
+            limit=request.limit,
+            document_ids=request.document_ids or None,
+            session_id=session_id,
+        )
+    except LLMGenerationError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        ) from exc
+
+    if session_id is None:
+        session_id = chat_repository.create_session(
+            user_id=user_id,
+            title=generate_session_title(request.question),
+        )
+
+    session = chat_repository.get_session(
+        session_id=session_id,
+        user_id=user_id,
+    )
+
+    if not session:
+        raise HTTPException(
+            status_code=404,
+            detail="Session not found",
+        )
+
+    if session[1] == "New Chat":
+        chat_repository.update_title(
+            session_id=session_id,
+            user_id=user_id,
+            title=generate_session_title(request.question),
+        )
+
+    chat_repository.add_message(
+        session_id=session_id,
+        user_id=user_id,
+        role="user",
+        content=request.question,
+    )
+
+    def event_stream():
+        answer_parts = []
+
+        import json
+
+        yield (
+            "event: meta\n"
+            f"data: {json.dumps({'session_id': session_id, 'citations': context})}\n\n"
+        )
+
+        try:
+            for chunk in answer_chunks:
+                if not chunk:
+                    continue
+                answer_parts.append(chunk)
+                yield (
+                    "event: token\n"
+                    f"data: {json.dumps({'text': chunk})}\n\n"
+                )
+
+            answer = "".join(answer_parts).strip()
+
+            if not answer:
+                raise LLMGenerationError(
+                    "The language model returned an empty answer."
+                )
+
+            chat_repository.add_message(
+                session_id=session_id,
+                user_id=user_id,
+                role="assistant",
+                content=answer,
+                citations=context,
+            )
+
+            yield (
+                "event: done\n"
+                f"data: {json.dumps({'session_id': session_id})}\n\n"
+            )
+        except Exception as exc:
+            yield (
+                "event: error\n"
+                f"data: {json.dumps({'detail': str(exc)})}\n\n"
+            )
+        finally:
+            duration = time.perf_counter() - start
+            RAG_REQUEST_LATENCY.observe(duration)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -659,7 +1202,8 @@ def get_session_messages(
             session_id=row[1],
             role=row[2],
             content=row[3],
-            created_at=row[4],
+            citations=row[4] or [],
+            created_at=row[5],
         )
         for row in rows
     ]

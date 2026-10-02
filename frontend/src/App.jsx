@@ -8,6 +8,9 @@ import {
   getStoredToken,
   saveToken,
   getHealth,
+  streamAskQuestion,
+  downloadDocument,
+  compareDocuments,
 } from "./api";
 
 function formatFileSize(bytes) {
@@ -79,8 +82,14 @@ function App() {
   const [file, setFile] = useState(null);
   const [uploadStatus, setUploadStatus] = useState("");
 
-  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
-  const [systemOpen, setSystemOpen] = useState(false);
+const [knowledgeOpen, setKnowledgeOpen] = useState(false);
+const [selectedCitation, setSelectedCitation] = useState(null);
+const [systemOpen, setSystemOpen] = useState(false);
+const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+const [comparisonOpen, setComparisonOpen] = useState(false);
+const [comparisonLoading, setComparisonLoading] = useState(false);
+const [comparisonResult, setComparisonResult] = useState(null);
+const [comparisonError, setComparisonError] = useState("");
 
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
@@ -126,7 +135,6 @@ function App() {
 
       saveToken(data.access_token);
       setToken(data.access_token);
-      setUser(data.user);
       setAuthPassword("");
       setAuthError("");
     } catch (error) {
@@ -225,6 +233,7 @@ async function loadSession(sessionId) {
   setCurrentSessionId(sessionId);
   setLoadingMessages(true);
   setAskError("");
+  setSelectedCitation(null);
 
   try {
     const data = await apiFetch(
@@ -322,7 +331,7 @@ async function uploadDocument() {
     });
 
     setUploadStatus(
-      `${data.filename} uploaded successfully.`
+      `${data.filename} queued for processing.`
     );
 
     setFile(null);
@@ -341,6 +350,26 @@ async function uploadDocument() {
     setUploading(false);
   }
 }
+
+
+  async function retryDocument(documentId) {
+    try {
+      await apiFetch(`/documents/${documentId}/retry`, {
+        method: "POST",
+      });
+      await loadDocuments();
+    } catch (error) {
+      window.alert(`Retry failed: ${error.message}`);
+    }
+  }
+
+  async function handleDownloadDocument(documentId) {
+    try {
+      await downloadDocument(documentId);
+    } catch (error) {
+      window.alert(`Download failed: ${error.message}`);
+    }
+  }
 
   function toggleDocument(documentId) {
     setSelectedDocumentIds((current) => {
@@ -434,8 +463,7 @@ async function loadHealth() {
     setHealth({
       status: "degraded",
       dependencies: {
-        database: "unavailable",
-        ollama: "unavailable",
+        database: "unavailable"
       },
     });
   }
@@ -466,9 +494,20 @@ async function askQuestion() {
     temporary: true,
   };
 
+  const temporaryAssistantMessage = {
+    id: `temp-assistant-${Date.now()}`,
+    role: "assistant",
+    content: "",
+    citations: [],
+    created_at: new Date().toISOString(),
+    temporary: true,
+    streaming: true,
+  };
+
   setSessionMessages((current) => [
     ...current,
     temporaryUserMessage,
+    temporaryAssistantMessage,
   ]);
 
   setQuestion("");
@@ -476,31 +515,104 @@ async function askQuestion() {
   setAsking(true);
 
   try {
-    const data = await apiFetch("/ask", {
-      method: "POST",
-      body: JSON.stringify({
-        question: trimmedQuestion,
-        limit: 3,
-        document_ids: selectedDocumentIds,
-        session_id: sessionId,
-      }),
-    });
+    let streamedSessionId = sessionId;
+    let streamedCitations = [];
 
-    setCurrentSessionId(data.session_id);
+    await streamAskQuestion(
+      trimmedQuestion,
+      3,
+      selectedDocumentIds,
+      sessionId,
+      (eventName, data) => {
+        if (eventName === "meta") {
+          streamedSessionId = data.session_id || streamedSessionId;
+          streamedCitations = data.citations || [];
 
-    await loadSession(data.session_id);
-    await refreshSessionList(data.session_id);
+          setCurrentSessionId(streamedSessionId);
+
+          setSessionMessages((current) =>
+            current.map((message) =>
+              message.id === temporaryAssistantMessage.id
+                ? {
+                    ...message,
+                    citations: streamedCitations,
+                  }
+                : message
+            )
+          );
+          return;
+        }
+
+        if (eventName === "token") {
+          setSessionMessages((current) =>
+            current.map((message) =>
+              message.id === temporaryAssistantMessage.id
+                ? {
+                    ...message,
+                    content: `${message.content || ""}${data.text || ""}`,
+                  }
+                : message
+            )
+          );
+          return;
+        }
+
+        if (eventName === "error") {
+          throw new Error(
+            data.detail || "The streamed response failed."
+          );
+        }
+      }
+    );
+
+    setSessionMessages((current) =>
+      current.map((message) =>
+        message.id === temporaryAssistantMessage.id
+          ? { ...message, streaming: false, temporary: false }
+          : message.id === temporaryUserMessage.id
+            ? { ...message, temporary: false }
+            : message
+      )
+    );
+
+    // Keep the streamed UI in place. The complete assistant response has
+    // already been persisted by the streaming endpoint, so reloading the
+    // entire session here would briefly replace the chat with the loading
+    // state and make the page appear to refresh.
+    setCurrentSessionId(streamedSessionId);
+    await refreshSessionList(streamedSessionId);
   } catch (error) {
     setSessionMessages((current) =>
       current.filter(
         (message) =>
-          message.id !== temporaryUserMessage.id
+          message.id !== temporaryUserMessage.id &&
+          message.id !== temporaryAssistantMessage.id
       )
     );
 
     setAskError(error.message);
   } finally {
     setAsking(false);
+  }
+}
+
+ async function runDocumentComparison() {
+  if (selectedDocumentIds.length !== 2 || comparisonLoading) {
+    return;
+  }
+
+  setComparisonOpen(true);
+  setComparisonLoading(true);
+  setComparisonResult(null);
+  setComparisonError("");
+
+  try {
+    const result = await compareDocuments(selectedDocumentIds);
+    setComparisonResult(result);
+  } catch (error) {
+    setComparisonError(error.message);
+  } finally {
+    setComparisonLoading(false);
   }
 }
 
@@ -603,6 +715,26 @@ async function askQuestion() {
     return () => clearInterval(interval);
   }, [user]);
 
+  useEffect(() => {
+    if (!user) {
+      return undefined;
+    }
+
+    const hasProcessingDocuments = documents.some(
+      (document) =>
+        document.status === "pending" ||
+        document.status === "processing"
+    );
+
+    if (!hasProcessingDocuments) {
+      return undefined;
+    }
+
+    const interval = setInterval(loadDocuments, 2000);
+
+    return () => clearInterval(interval);
+  }, [user, documents]);
+
 
   useEffect(() => {
   localStorage.setItem("cloudrag-theme", theme);
@@ -638,7 +770,9 @@ async function askQuestion() {
     documents.length > 0 &&
     selectedDocumentIds.length === documents.length;
 
-  const systemHealthy = health?.status === "ok";
+  const systemHealthy =
+  health?.status === "ok" ||
+  health?.dependencies?.database === "ok";
 
   if (authLoading) {
     return (
@@ -653,22 +787,11 @@ async function askQuestion() {
         }}
       >
         <div style={{ textAlign: "center" }}>
-          <div
-            style={{
-              width: 56,
-              height: 56,
-              borderRadius: 16,
-              display: "grid",
-              placeItems: "center",
-              margin: "0 auto 16px",
-              background: "#111827",
-              color: "white",
-              fontSize: 24,
-              fontWeight: 700,
-            }}
-          >
-            C
-          </div>
+          <img
+            className="auth-brand-mark"
+            src="/icon-192.png"
+            alt="CloudRAG"
+          />
           <strong style={{ fontSize: 18 }}>CloudRAG</strong>
           <div style={{ marginTop: 8, color: "#6b7280" }}>Loading...</div>
         </div>
@@ -678,62 +801,20 @@ async function askQuestion() {
 
   if (!user) {
     return (
-      <main
-        style={{
-          minHeight: "100vh",
-          display: "grid",
-          placeItems: "center",
-          padding: 24,
-          background: "#f7f8fa",
-          color: "#1f2937",
-          fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
-        }}
-      >
-        <section
-          style={{
-            width: "min(420px, 100%)",
-            background: "white",
-            border: "1px solid #e5e7eb",
-            borderRadius: 20,
-            padding: 32,
-            boxShadow: "0 18px 50px rgba(15, 23, 42, 0.08)",
-          }}
-        >
-          <div style={{ textAlign: "center", marginBottom: 28 }}>
-            <div
-              style={{
-                width: 56,
-                height: 56,
-                borderRadius: 16,
-                display: "grid",
-                placeItems: "center",
-                margin: "0 auto 14px",
-                background: "#111827",
-                color: "white",
-                fontSize: 24,
-                fontWeight: 700,
-              }}
-            >
-              C
-            </div>
-            <h1 style={{ margin: 0, fontSize: 26 }}>CloudRAG</h1>
-            <p style={{ margin: "8px 0 0", color: "#6b7280" }}>
-              Document Intelligence
-            </p>
+      <main className="auth-shell">
+        <section className="auth-card">
+          <div className="auth-header">
+            <img
+              className="auth-brand-mark"
+              src="/icon-192.png"
+              alt="CloudRAG"
+            />
+            <h1 className="auth-title">CloudRAG</h1>
+            <p className="auth-subtitle">Document Intelligence</p>
           </div>
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 8,
-              padding: 4,
-              background: "#f3f4f6",
-              borderRadius: 10,
-              marginBottom: 22,
-            }}
-          >
-            {[["login", "Sign in"], ["register", "Create account"]].map(
+          <div className="auth-mode-switch">
+            {[['login', 'Sign in'], ['register', 'Create account']].map(
               ([mode, label]) => (
                 <button
                   key={mode}
@@ -742,19 +823,9 @@ async function askQuestion() {
                     setAuthMode(mode);
                     setAuthError("");
                   }}
-                  style={{
-                    border: 0,
-                    borderRadius: 8,
-                    padding: "10px 8px",
-                    background: authMode === mode ? "white" : "transparent",
-                    color: authMode === mode ? "#111827" : "#6b7280",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    boxShadow:
-                      authMode === mode
-                        ? "0 1px 3px rgba(0,0,0,.08)"
-                        : "none",
-                  }}
+                  className={`auth-mode-button ${
+                    authMode === mode ? "active" : ""
+                  }`}
                 >
                   {label}
                 </button>
@@ -762,48 +833,22 @@ async function askQuestion() {
             )}
           </div>
 
-          <form onSubmit={handleAuthSubmit}>
-            <label style={{ display: "block", marginBottom: 16 }}>
-              <span
-                style={{
-                  display: "block",
-                  marginBottom: 7,
-                  fontSize: 13,
-                  fontWeight: 600,
-                }}
-              >
-                Email
-              </span>
+          <form onSubmit={handleAuthSubmit} className="auth-form">
+            <label className="auth-field">
+              <span className="auth-label">Email</span>
               <input
                 type="email"
                 value={authEmail}
                 onChange={(event) => setAuthEmail(event.target.value)}
                 autoComplete="email"
                 placeholder="you@example.com"
-                style={{
-                  width: "100%",
-                  boxSizing: "border-box",
-                  border: "1px solid #d1d5db",
-                  borderRadius: 10,
-                  padding: "12px 13px",
-                  fontSize: 14,
-                  outline: "none",
-                }}
+                className="auth-input"
                 required
               />
             </label>
 
-            <label style={{ display: "block", marginBottom: 16 }}>
-              <span
-                style={{
-                  display: "block",
-                  marginBottom: 7,
-                  fontSize: 13,
-                  fontWeight: 600,
-                }}
-              >
-                Password
-              </span>
+            <label className="auth-field">
+              <span className="auth-label">Password</span>
               <input
                 type="password"
                 value={authPassword}
@@ -811,31 +856,13 @@ async function askQuestion() {
                 autoComplete={authMode === "login" ? "current-password" : "new-password"}
                 placeholder="At least 8 characters"
                 minLength={authMode === "register" ? 8 : 1}
-                style={{
-                  width: "100%",
-                  boxSizing: "border-box",
-                  border: "1px solid #d1d5db",
-                  borderRadius: 10,
-                  padding: "12px 13px",
-                  fontSize: 14,
-                  outline: "none",
-                }}
+                className="auth-input"
                 required
               />
             </label>
 
             {authError && (
-              <div
-                style={{
-                  marginBottom: 16,
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  background: "#fef2f2",
-                  border: "1px solid #fecaca",
-                  color: "#b91c1c",
-                  fontSize: 13,
-                }}
-              >
+              <div className="auth-error">
                 {authError}
               </div>
             )}
@@ -843,17 +870,7 @@ async function askQuestion() {
             <button
               type="submit"
               disabled={authSubmitting}
-              style={{
-                width: "100%",
-                border: 0,
-                borderRadius: 10,
-                padding: "13px 16px",
-                background: "#111827",
-                color: "white",
-                fontWeight: 700,
-                cursor: authSubmitting ? "wait" : "pointer",
-                opacity: authSubmitting ? 0.7 : 1,
-              }}
+              className="auth-submit"
             >
               {authSubmitting
                 ? authMode === "login"
@@ -875,9 +892,26 @@ async function askQuestion() {
         theme === "dark" ? "theme-dark" : "theme-light"
       }`}
     >
-      <aside className="sidebar">
+      {mobileSidebarOpen && (
+        <button
+          type="button"
+          className="mobile-sidebar-overlay"
+          aria-label="Close menu"
+          onClick={() => setMobileSidebarOpen(false)}
+        />
+      )}
+
+      <aside
+        className={`sidebar ${
+          mobileSidebarOpen ? "mobile-open" : ""
+        }`}
+      >
         <div className="sidebar-brand">
-          <div className="brand-mark">C</div>
+          <img
+            className="brand-mark"
+            src="/icon-192.png"
+            alt="CloudRAG"
+          />
 
           <div>
             <div className="brand-name">CloudRAG</div>
@@ -922,7 +956,10 @@ async function askQuestion() {
                   : ""
               }`}
               key={session.id}
-              onClick={() => loadSession(session.id)}
+              onClick={() => {
+                loadSession(session.id);
+                setMobileSidebarOpen(false);
+              }}
             >
               <span className="session-icon">▱</span>
 
@@ -944,9 +981,11 @@ async function askQuestion() {
             className={`sidebar-tool ${
               knowledgeOpen ? "selected" : ""
             }`}
-            onClick={() =>
-              setKnowledgeOpen((current) => !current)
-            }
+            onClick={() => {
+              setKnowledgeOpen((current) => !current);
+              setSystemOpen(false);
+              setMobileSidebarOpen(false);
+            }}
           >
             <span>▤</span>
             Knowledge base
@@ -959,9 +998,11 @@ async function askQuestion() {
             className={`sidebar-tool ${
               systemOpen ? "selected" : ""
             }`}
-            onClick={() =>
-              setSystemOpen((current) => !current)
-            }
+            onClick={() => {
+              setSystemOpen((current) => !current);
+              setKnowledgeOpen(false);
+              setMobileSidebarOpen(false);
+            }}
           >
             <span>◉</span>
             System status
@@ -1006,6 +1047,14 @@ async function askQuestion() {
 
       <section className="chat-shell">
         <header className="chat-header">
+          <button
+            type="button"
+            className="mobile-menu-button"
+            aria-label="Open menu"
+            onClick={() => setMobileSidebarOpen(true)}
+          >
+            ☰
+          </button>
           <div className="chat-header-left">
             <div className="chat-title">
               {currentSession?.title || "New Chat"}
@@ -1182,30 +1231,51 @@ async function askQuestion() {
 
                       <div className="message-text">
                         {message.content}
+                        {message.streaming && (
+                          <span className="streaming-cursor" />
+                        )}
                       </div>
+
+                      {message.role === "assistant" &&
+                        message.citations?.length > 0 && (
+                          <div className="message-citations">
+                            <div className="message-citations-label">
+                              Sources
+                            </div>
+
+                            <div className="message-citation-list">
+                              {message.citations.map(
+                                (citation, index) => (
+                                  <button
+                                    type="button"
+                                    className="citation-button"
+                                    key={`${message.id}-${citation.chunk_id}`}
+                                    onClick={() =>
+                                      setSelectedCitation({
+                                        ...citation,
+                                        number: index + 1,
+                                      })
+                                    }
+                                    title={`View source ${index + 1}: ${citation.filename}`}
+                                  >
+                                    <span className="citation-number">
+                                      {index + 1}
+                                    </span>
+                                    <span className="citation-filename">
+                                      {citation.filename}
+                                    </span>
+                                    <span className="citation-arrow">
+                                      →
+                                    </span>
+                                  </button>
+                                )
+                              )}
+                            </div>
+                          </div>
+                        )}
                     </div>
                   </article>
                 ))}
-
-                {asking && (
-                  <article className="message assistant-message">
-                    <div className="message-avatar">
-                      C
-                    </div>
-
-                    <div className="message-body">
-                      <div className="message-role">
-                        CloudRAG
-                      </div>
-
-                      <div className="typing-indicator">
-                        <span />
-                        <span />
-                        <span />
-                      </div>
-                    </div>
-                  </article>
-                )}
 
                 {askError && (
                   <div className="chat-error">
@@ -1290,6 +1360,141 @@ async function askQuestion() {
         </div>
       </section>
 
+      {comparisonOpen && (
+        <div className="comparison-overlay" onClick={() => setComparisonOpen(false)}>
+          <section className="comparison-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="comparison-header">
+              <div>
+                <h2>Document comparison</h2>
+                <p>Evidence-based comparison of the two selected documents.</p>
+              </div>
+              <button
+                type="button"
+                className="panel-close"
+                onClick={() => setComparisonOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="comparison-body">
+              {comparisonLoading && (
+                <div className="comparison-loading">
+                  <div className="loading-spinner" />
+                  Comparing the selected documents...
+                </div>
+              )}
+
+              {comparisonError && (
+                <div className="panel-error">{comparisonError}</div>
+              )}
+
+              {comparisonResult && (
+                <>
+                  <div className="comparison-documents">
+                    {comparisonResult.documents.map((document) => (
+                      <div className="comparison-document" key={document.id}>
+                        <span>Document</span>
+                        <strong title={document.filename}>{document.filename}</strong>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="comparison-answer">
+                    {comparisonResult.answer}
+                  </div>
+
+                  {comparisonResult.citations?.length > 0 && (
+                    <div className="comparison-sources">
+                      <h3>Evidence used</h3>
+                      {comparisonResult.citations.map((citation, index) => (
+                        <button
+                          type="button"
+                          className="comparison-source"
+                          key={`${citation.document_id}-${citation.chunk_id}`}
+                          onClick={() => setSelectedCitation({ ...citation, number: index + 1 })}
+                        >
+                          <span>{index + 1}</span>
+                          <strong>{citation.filename}</strong>
+                          <small>Chunk {citation.chunk_index}</small>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {selectedCitation && (
+        <>
+          <button
+            type="button"
+            className="citation-panel-overlay"
+            aria-label="Close citation"
+            onClick={() => setSelectedCitation(null)}
+          />
+
+          <aside className="citation-panel">
+            <div className="side-panel-header">
+              <div>
+                <h2>Source {selectedCitation.number}</h2>
+                <p>Retrieved document evidence.</p>
+              </div>
+
+              <button
+                className="panel-close"
+                onClick={() => setSelectedCitation(null)}
+                aria-label="Close citation"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="panel-body citation-panel-body">
+              <div className="citation-source-card">
+                <strong>{selectedCitation.filename}</strong>
+                <span>
+                  Chunk {selectedCitation.chunk_index}
+                </span>
+              </div>
+
+              <div className="citation-evidence-label">
+                Source evidence
+              </div>
+
+              <blockquote className="citation-evidence">
+                {selectedCitation.content}
+              </blockquote>
+
+              <div className="citation-meta">
+                Retrieval distance: {
+                  Number(selectedCitation.distance).toFixed(4)
+                }
+              </div>
+
+              <button
+                type="button"
+                className="citation-download-button"
+                onClick={async () => {
+                  try {
+                    await downloadDocument(
+                      selectedCitation.document_id
+                    );
+                  } catch (error) {
+                    setAskError(error.message);
+                  }
+                }}
+              >
+                Download original document
+              </button>
+            </div>
+          </aside>
+        </>
+      )}
+
       {knowledgeOpen && (
         <aside className="side-panel">
           <div className="side-panel-header">
@@ -1314,7 +1519,7 @@ async function askQuestion() {
                 id="document-upload"
                 className="document-file-input"
                 type="file"
-                accept=".txt,.md,.pdf,.docx,.pptx,.xlsx,.xlsm,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                accept=".txt,.md,.pdf,.docx,.pptx,.xlsx,.xlsm,.csv,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 onChange={(event) =>
                   setFile(
                     event.target.files?.[0] || null
@@ -1375,6 +1580,16 @@ async function askQuestion() {
               <span>
                 {selectedDocumentIds.length} selected
               </span>
+
+              <button
+                type="button"
+                className="compare-button"
+                onClick={runDocumentComparison}
+                disabled={selectedDocumentIds.length !== 2 || comparisonLoading}
+                title="Select exactly two completed documents to compare"
+              >
+                {comparisonLoading ? "Comparing..." : "Compare"}
+              </button>
             </div>
 
             <div className="knowledge-list">
@@ -1398,7 +1613,7 @@ async function askQuestion() {
                   );
 
                 return (
-                  <label
+                  <div
                     className={`knowledge-item ${
                       selected ? "selected" : ""
                     }`}
@@ -1417,7 +1632,7 @@ async function askQuestion() {
                     </div>
 
                     <div className="knowledge-info">
-                      <strong>
+                      <strong title={document.filename}>
                         {document.filename}
                       </strong>
 
@@ -1426,9 +1641,57 @@ async function askQuestion() {
                           document.file_size
                         )}{" "}
                         · {document.status}
+                        {document.processing_stage &&
+                          document.status !== "completed" &&
+                          ` · ${document.processing_stage}`}
                       </span>
+
+                      {(document.status === "pending" ||
+                        document.status === "processing") && (
+                        <div className="document-progress">
+                          <div className="document-progress-track">
+                            <div
+                              className="document-progress-bar"
+                              style={{
+                                width: `${document.processing_progress || 0}%`,
+                              }}
+                            />
+                          </div>
+                          <small>
+                            {document.processing_progress || 0}%
+                          </small>
+                        </div>
+                      )}
+
+                      {document.status === "failed" && (
+                        <div className="document-error">
+                          <small title={document.error_message || "Processing failed."}>
+                            {document.error_message || "Processing failed."}
+                          </small>
+                          <button
+                            type="button"
+                            className="document-retry-button"
+                            onClick={() => retryDocument(document.id)}
+                          >
+                            Retry
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  </label>
+
+                    <button
+                      type="button"
+                      className="document-download-button"
+                      onClick={() =>
+                        handleDownloadDocument(document.id)
+                      }
+                      disabled={document.status !== "completed"}
+                      title="Download original document"
+                      aria-label={`Download ${document.filename}`}
+                    >
+                      ↓
+                    </button>
+                  </div>
                 );
               })}
             </div>
@@ -1574,23 +1837,13 @@ async function askQuestion() {
               </div>
 
               <div className="dependency">
-                <span>Ollama</span>
+                <span>AI Service</span>
 
-                <strong
-                  className={
-                    health?.dependencies?.ollama ===
-                    "ok"
-                      ? "status-ok"
-                      : "status-error"
-                  }
-                >
-                  {health?.dependencies?.ollama ===
-                  "ok"
-                    ? "Healthy"
-                    : "Unavailable"}
+                <strong className="status-ok">
+                  Connected
                 </strong>
               </div>
-            </div>
+              </div>
 
             <div className="health-note">
               Health status automatically refreshes every

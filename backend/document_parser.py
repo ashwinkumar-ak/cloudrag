@@ -14,6 +14,7 @@ SUPPORTED_EXTENSIONS = {
     ".pptx",
     ".xlsx",
     ".xlsm",
+    ".csv",
 }
 
 
@@ -43,6 +44,9 @@ def extract_text(filename: str, content: bytes) -> str:
 
     if extension in {".xlsx", ".xlsm"}:
         return _extract_excel(content)
+
+    if extension == ".csv":
+        return _extract_csv(content)
 
     raise DocumentParseError(
         f"Unsupported file type: {extension}"
@@ -209,4 +213,28 @@ def _extract_excel(content: bytes) -> str:
     except Exception as exc:
         raise DocumentParseError(
             "Failed to read Excel workbook."
+        ) from exc
+
+def _extract_csv(content: bytes) -> str:
+    try:
+        from backend.spreadsheet import parse_spreadsheet
+
+        rows = parse_spreadsheet("data.csv", content)
+        sections = []
+
+        for row in rows:
+            values = [
+                f"{key}: {value}"
+                for key, value in row["display_data"].items()
+                if value != ""
+            ]
+            sections.append(
+                f"[Sheet: CSV, Row {row['row_number']}]\n"
+                + " | ".join(values)
+            )
+
+        return "\n\n".join(sections)
+    except Exception as exc:
+        raise DocumentParseError(
+            "Failed to read CSV document."
         ) from exc
