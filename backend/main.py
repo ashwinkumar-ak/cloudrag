@@ -1,4 +1,7 @@
 import time
+from pathlib import Path
+from uuid import uuid4
+from urllib.parse import quote
 
 from fastapi import (
     Depends,
@@ -10,6 +13,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi import Response
+from fastapi.responses import StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST
 
 from backend.auth import (
@@ -49,6 +53,7 @@ from backend.models import (
     UserResponse,
 )
 from backend.rag import RAGService
+from backend.storage import DocumentStorage, StorageError
 from backend.repositories.chunks import ChunkRepository
 from backend.repositories.documents import DocumentRepository
 from backend.repositories.chat import ChatRepository
@@ -62,6 +67,7 @@ ingestion_service = IngestionService()
 rag_service = RAGService()
 chat_repository = ChatRepository()
 user_repository = UserRepository()
+document_storage = DocumentStorage()
 
 bearer_scheme = HTTPBearer(
     auto_error=False,
@@ -342,6 +348,20 @@ def delete_document(
     document_id: int,
     user_id: int = Depends(get_current_user_id),
 ):
+    storage_path = document_repository.get_storage_path(
+        document_id=document_id,
+        user_id=user_id,
+    )
+
+    if storage_path:
+        try:
+            document_storage.delete(storage_path)
+        except StorageError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=str(exc),
+            ) from exc
+
     deleted = document_repository.delete_document(
         document_id=document_id,
         user_id=user_id,
@@ -359,6 +379,57 @@ def delete_document(
     }
 
 
+@app.get(
+    "/documents/{document_id}/download",
+)
+def download_document(
+    document_id: int,
+    user_id: int = Depends(get_current_user_id),
+):
+    row = document_repository.get_document(
+        document_id=document_id,
+        user_id=user_id,
+    )
+
+    if not row:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found",
+        )
+
+    storage_path = document_repository.get_storage_path(
+        document_id=document_id,
+        user_id=user_id,
+    )
+
+    if not storage_path:
+        raise HTTPException(
+            status_code=404,
+            detail="Original document file is not available.",
+        )
+
+    try:
+        content = document_storage.download(storage_path)
+    except StorageError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=str(exc),
+        ) from exc
+
+    filename = Path(row[1]).name
+    encoded_filename = quote(filename)
+
+    return StreamingResponse(
+        iter([content]),
+        media_type=row[2] or "application/octet-stream",
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename*=UTF-8''{encoded_filename}"
+            )
+        },
+    )
+
+
 @app.post(
     "/documents",
 )
@@ -372,6 +443,7 @@ async def upload_document(
             detail="Filename is required",
         )
 
+    filename = Path(file.filename).name
     content = await file.read()
 
     if not content:
@@ -382,7 +454,7 @@ async def upload_document(
 
     try:
         text = extract_text(
-            filename=file.filename,
+            filename=filename,
             content=content,
         )
     except DocumentParseError as exc:
@@ -399,17 +471,43 @@ async def upload_document(
             ),
         )
 
+    content_type = (
+        file.content_type
+        or "application/octet-stream"
+    )
+
+    storage_path = (
+        f"users/{user_id}/"
+        f"{uuid4().hex}-{filename}"
+    )
+
+    try:
+        document_storage.upload(
+            path=storage_path,
+            content=content,
+            content_type=content_type,
+        )
+    except StorageError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=str(exc),
+        ) from exc
+
     try:
         document_id = ingestion_service.ingest_text(
             user_id=user_id,
-            filename=file.filename,
-            content_type=(
-                file.content_type
-                or "application/octet-stream"
-            ),
+            filename=filename,
+            content_type=content_type,
             text=text,
+            file_size=len(content),
+            storage_path=storage_path,
         )
     except Exception as exc:
+        try:
+            document_storage.delete(storage_path)
+        except StorageError:
+            pass
+
         raise HTTPException(
             status_code=500,
             detail=f"Document ingestion failed: {exc}",
@@ -417,8 +515,9 @@ async def upload_document(
 
     return {
         "document_id": document_id,
-        "filename": file.filename,
+        "filename": filename,
         "status": "completed",
+        "storage": "stored",
     }
 
 

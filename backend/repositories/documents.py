@@ -11,6 +11,7 @@ class DocumentRepository:
         filename: str,
         content_type: str,
         file_size: int,
+        storage_path: str | None = None,
     ) -> int:
         with psycopg.connect(
             settings.database_url
@@ -24,9 +25,10 @@ class DocumentRepository:
                         filename,
                         content_type,
                         file_size,
-                        status
+                        status,
+                        storage_path
                     )
-                    VALUES (%s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     RETURNING id
                     """,
                     (
@@ -35,6 +37,7 @@ class DocumentRepository:
                         content_type,
                         file_size,
                         "pending",
+                        storage_path,
                     ),
                 )
 
@@ -83,6 +86,32 @@ class DocumentRepository:
                 cursor.execute(
                     """
                     SELECT filename
+                    FROM documents
+                    WHERE id = %s
+                    AND user_id = %s
+                    """,
+                    (
+                        document_id,
+                        user_id,
+                    ),
+                )
+
+                row = cursor.fetchone()
+
+        return row[0] if row else None
+
+    def get_storage_path(
+        self,
+        document_id: int,
+        user_id: int,
+    ) -> str | None:
+        with psycopg.connect(
+            settings.database_url
+        ) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT storage_path
                     FROM documents
                     WHERE id = %s
                     AND user_id = %s

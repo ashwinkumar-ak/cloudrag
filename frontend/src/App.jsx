@@ -8,6 +8,7 @@ import {
   getStoredToken,
   saveToken,
   getHealth,
+  downloadDocument,
 } from "./api";
 
 function formatFileSize(bytes) {
@@ -341,6 +342,14 @@ async function uploadDocument() {
     setUploading(false);
   }
 }
+
+  async function handleDownloadDocument(documentId) {
+    try {
+      await downloadDocument(documentId);
+    } catch (error) {
+      window.alert(`Download failed: ${error.message}`);
+    }
+  }
 
   function toggleDocument(documentId) {
     setSelectedDocumentIds((current) => {
@@ -1427,7 +1436,7 @@ async function askQuestion() {
                   );
 
                 return (
-                  <label
+                  <div
                     className={`knowledge-item ${
                       selected ? "selected" : ""
                     }`}
@@ -1446,7 +1455,7 @@ async function askQuestion() {
                     </div>
 
                     <div className="knowledge-info">
-                      <strong>
+                      <strong title={document.filename}>
                         {document.filename}
                       </strong>
 
@@ -1457,7 +1466,20 @@ async function askQuestion() {
                         · {document.status}
                       </span>
                     </div>
-                  </label>
+
+                    <button
+                      type="button"
+                      className="document-download-button"
+                      onClick={() =>
+                        handleDownloadDocument(document.id)
+                      }
+                      disabled={document.status !== "completed"}
+                      title="Download original document"
+                      aria-label={`Download ${document.filename}`}
+                    >
+                      ↓
+                    </button>
+                  </div>
                 );
               })}
             </div>

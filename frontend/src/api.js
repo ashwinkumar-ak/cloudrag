@@ -132,6 +132,63 @@ export async function deleteDocument(documentId) {
   });
 }
 
+export async function downloadDocument(documentId) {
+  const token = getToken();
+
+  const response = await fetch(
+    `${API_URL}/documents/${documentId}/download`,
+    {
+      headers: token
+        ? {
+            Authorization: `Bearer ${token}`,
+          }
+        : {},
+    }
+  );
+
+  if (!response.ok) {
+    let message = `Download failed with status ${response.status}.`;
+
+    try {
+      const data = await response.json();
+
+      if (data?.detail) {
+        message = data.detail;
+      }
+    } catch {
+      // Keep the generic download error.
+    }
+
+    throw new Error(message);
+  }
+
+  const blob = await response.blob();
+
+  const disposition =
+    response.headers.get("Content-Disposition") || "";
+
+  const filenameMatch = disposition.match(
+    /filename\*=UTF-8''([^;]+)/i
+  );
+
+  const filename = filenameMatch
+    ? decodeURIComponent(filenameMatch[1])
+    : "document";
+
+  const objectUrl = URL.createObjectURL(blob);
+
+  try {
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 export async function searchDocuments(
   query,
   limit = 5,

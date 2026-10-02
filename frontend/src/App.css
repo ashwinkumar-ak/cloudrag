@@ -1800,6 +1800,37 @@ input {
   font-size: 8px;
 }
 
+.document-download-button {
+  width: 30px;
+  height: 30px;
+
+  flex: 0 0 30px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 0;
+
+  border: 1px solid var(--cr-border);
+  border-radius: 7px;
+
+  background: var(--cr-surface);
+  color: var(--cr-accent);
+
+  font-size: 14px;
+  line-height: 1;
+}
+
+.document-download-button:hover:not(:disabled) {
+  background: var(--cr-surface-hover);
+}
+
+.document-download-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .panel-empty {
   padding: 20px 5px;
 

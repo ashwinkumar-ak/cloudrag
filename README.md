@@ -782,3 +782,34 @@ These are intentionally outside the current core implementation.
 # License
 
 This project is currently intended as a personal learning and portfolio project.
+
+
+## Original Document Storage
+
+CloudRAG retains the original uploaded file separately from its parsed RAG data.
+
+For the public cloud deployment:
+
+```text
+User upload
+    ↓
+Render FastAPI
+    ↓
+Supabase Storage
+    └── original file
+    ↓
+Supabase PostgreSQL
+    ├── document metadata
+    ├── extracted chunks
+    └── embeddings
+```
+
+The storage bucket is private. Original files are never exposed through a public bucket URL. Authenticated users download their own files through the protected API endpoint:
+
+```text
+GET /documents/{document_id}/download
+```
+
+Each stored object uses a user-scoped path, and document deletion removes both the database record and the stored original file.
+
+For local development, `STORAGE_BACKEND=local` stores originals under the configured local storage directory. The cloud deployment uses `STORAGE_BACKEND=supabase` with Supabase Storage.

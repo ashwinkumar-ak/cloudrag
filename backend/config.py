@@ -23,6 +23,13 @@ class Settings(BaseSettings):
 
     frontend_url: str = "http://localhost:5173"
 
+    storage_backend: str = "local"
+    local_storage_path: str = "./storage"
+    supabase_url: str | None = None
+    supabase_service_role_key: str | None = None
+    supabase_storage_bucket: str = "documents"
+
+
     gemini_api_key: str | None = None
 
     gemini_model: str = "gemini-3.5-flash-lite"

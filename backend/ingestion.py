@@ -26,6 +26,8 @@ class IngestionService:
         filename: str,
         content_type: str,
         text: str,
+        file_size: int | None = None,
+        storage_path: str | None = None,
     ) -> int:
         if not text.strip():
             raise ValueError("Document text must not be empty")
@@ -36,7 +38,12 @@ class IngestionService:
             user_id=user_id,
             filename=filename,
             content_type=content_type,
-            file_size=len(text.encode("utf-8")),
+            file_size=(
+                file_size
+                if file_size is not None
+                else len(text.encode("utf-8"))
+            ),
+            storage_path=storage_path,
         )
 
         self.document_repository.update_status(
