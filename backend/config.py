@@ -33,7 +33,16 @@ class Settings(BaseSettings):
     supabase_service_role_key: str | None = None
     supabase_storage_bucket: str = "documents"
 
-    ollama_base_url: str = "http://localhost:11434"
+
+    gemini_api_key: str | None = None
+
+    gemini_model: str = "gemini-3.5-flash-lite"
+
+    gemini_embedding_model: str = "gemini-embedding-2"
+
+    gemini_api_base_url: str = (
+        "https://generativelanguage.googleapis.com/v1beta"
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

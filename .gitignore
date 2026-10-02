@@ -1,3 +1,4 @@
+@'
 # Python
 .venv/
 __pycache__/
@@ -28,11 +29,11 @@ test.txt
 cloudrag-monitoring-test.txt
 test-excel-document.xlsx
 
-# Local document storage
-storage/
-
 # IDE / OS
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+'@ | Set-Content .gitignore -Encoding UTF8
+# Local document storage
+storage/
