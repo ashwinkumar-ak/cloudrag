@@ -258,11 +258,20 @@ class LLMService:
 
     def _build_parts(self, prompt: str, image_inputs=None):
         parts = []
-        for image in image_inputs or []:
+        for index, image in enumerate(image_inputs or [], start=1):
             mime_type = image.get("mime_type")
             image_bytes = image.get("bytes")
             if not mime_type or not image_bytes:
                 continue
+
+            label = image.get("label") or f"Image {index}"
+            filename = image.get("filename") or "unknown document"
+            parts.append({
+                "text": (
+                    f"VISUAL EVIDENCE {index}: {label} from {filename}. "
+                    "Use this image as distinct visual evidence."
+                )
+            })
             parts.append({
                 "inline_data": {
                     "mime_type": mime_type,

@@ -103,6 +103,66 @@ class RAGService:
             document_ids=document_ids,
         )
 
+    def _collect_relevant_images(
+        self,
+        context: list[dict],
+        max_images: int = 4,
+    ) -> list[dict]:
+        """Load the distinct visual evidence associated with retrieved chunks.
+
+        Multiple retrieved chunks from the same document may point to different
+        figures. Keep those figures distinct so Gemini can reason across them,
+        while bounding the multimodal payload for latency and cost.
+        """
+        image_inputs = []
+        selected_ids = set()
+
+        for item in context:
+            if not item.get("image") or len(image_inputs) >= max_images:
+                continue
+
+            try:
+                image_rows = self.document_image_repository.list_by_document(
+                    item["document_id"],
+                    limit=8,
+                )
+                match = re.search(r"\[Embedded image (\d+) —", item.get("content", ""))
+                target_index = int(match.group(1)) if match else None
+
+                candidates = []
+                for image_row in image_rows:
+                    if image_row[8] == "Standalone image":
+                        candidates.append(image_row)
+                    elif target_index is not None and image_row[9] == target_index:
+                        candidates.append(image_row)
+
+                # If a retrieved chunk is image-aware but the exact figure could
+                # not be identified, use the first available image as fallback.
+                if not candidates and image_rows:
+                    candidates = [image_rows[0]]
+
+                for image_row in candidates:
+                    if len(image_inputs) >= max_images or image_row[0] in selected_ids:
+                        continue
+
+                    image_bytes = self.document_storage.download(image_row[3])
+                    label = image_row[8] or f"Image {image_row[9]}"
+                    image_inputs.append({
+                        "image_id": image_row[0],
+                        "mime_type": image_row[2],
+                        "bytes": image_bytes,
+                        "label": label,
+                        "image_index": image_row[9],
+                        "filename": item["filename"],
+                    })
+                    selected_ids.add(image_row[0])
+            except Exception:
+                # Visual evidence is an enhancement; retrieval should still work
+                # when an individual image cannot be downloaded.
+                continue
+
+        return image_inputs
+
     def answer_stream(
         self,
         question: str,
@@ -139,31 +199,13 @@ class RAGService:
                 "in the selected documents."
             ])
 
-        image_inputs = []
-        image_documents_added = set()
+        image_inputs = self._collect_relevant_images(context, max_images=4)
         context_sections = []
         for item in context:
             context_sections.append(
                 f"[Source: {item['filename']}, chunk {item['chunk_index']}]\n"
                 f"{item['content']}"
             )
-            if item.get("image") and item["document_id"] not in image_documents_added and len(image_inputs) < 3:
-                try:
-                    image_rows = self.document_image_repository.list_by_document(
-                        item["document_id"],
-                        limit=3,
-                    )
-                    for image_row in image_rows:
-                        if len(image_inputs) >= 3:
-                            break
-                        image_bytes = self.document_storage.download(image_row[3])
-                        image_inputs.append({
-                            "mime_type": image_row[2],
-                            "bytes": image_bytes,
-                        })
-                    image_documents_added.add(item["document_id"])
-                except Exception:
-                    pass
 
         context_text = "\n\n".join(context_sections)
 
@@ -223,6 +265,8 @@ Rules:
 - If the documents do not contain enough information, answer:
   "I don't have enough information in the provided documents."
 - When image input is provided, use the visual evidence together with the retrieved description.
+- If multiple images are supplied, reason across them when the question requires comparison, sequence, relationships, trends, or synthesis.
+- Treat each supplied image as distinct evidence and use its source label to keep figures separate.
 
 Return ONLY the final answer as plain text.
 """
@@ -265,31 +309,13 @@ Return ONLY the final answer as plain text.
                 [],
             )
 
-        image_inputs = []
-        image_documents_added = set()
+        image_inputs = self._collect_relevant_images(context, max_images=4)
         context_sections = []
         for item in context:
             context_sections.append(
                 f"[Source: {item['filename']}, chunk {item['chunk_index']}]\n"
                 f"{item['content']}"
             )
-            if item.get("image") and item["document_id"] not in image_documents_added and len(image_inputs) < 3:
-                try:
-                    image_rows = self.document_image_repository.list_by_document(
-                        item["document_id"],
-                        limit=3,
-                    )
-                    for image_row in image_rows:
-                        if len(image_inputs) >= 3:
-                            break
-                        image_bytes = self.document_storage.download(image_row[3])
-                        image_inputs.append({
-                            "mime_type": image_row[2],
-                            "bytes": image_bytes,
-                        })
-                    image_documents_added.add(item["document_id"])
-                except Exception:
-                    pass
 
         context_text = "\n\n".join(context_sections)
 
@@ -355,6 +381,8 @@ Rules:
 - If the documents do not contain enough information, answer:
   "I don't have enough information in the provided documents."
 - When image input is provided, use the visual evidence together with the retrieved description.
+- If multiple images are supplied, reason across them when the question requires comparison, sequence, relationships, trends, or synthesis.
+- Treat each supplied image as distinct evidence and use its source label to keep figures separate.
 
 The answer must be the final response to the user.
 """
