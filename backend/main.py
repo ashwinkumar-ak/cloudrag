@@ -694,6 +694,11 @@ async def upload_document(
     filename = Path(file.filename).name
     content = await file.read()
 
+    content_type = (
+        file.content_type
+        or "application/octet-stream"
+    )
+
     if len(content) > settings.max_upload_size_bytes:
         raise HTTPException(
             status_code=413,
@@ -711,11 +716,6 @@ async def upload_document(
             status_code=400,
             detail="Document must not be empty",
         )
-
-    content_type = (
-        file.content_type
-        or "application/octet-stream"
-    )
 
     storage_path = (
         f"users/{user_id}/"
