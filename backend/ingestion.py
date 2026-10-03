@@ -9,6 +9,7 @@ from backend.metrics import (
 from backend.repositories.chunks import ChunkRepository
 from backend.repositories.documents import DocumentRepository
 from backend.repositories.spreadsheets import SpreadsheetRepository
+from backend.repositories.document_images import DocumentImageRepository
 
 
 class IngestionService:
@@ -17,6 +18,7 @@ class IngestionService:
         self.chunk_repository = ChunkRepository()
         self.embedding_service = EmbeddingService()
         self.spreadsheet_repository = SpreadsheetRepository()
+        self.document_image_repository = DocumentImageRepository()
         self.chunker = TextChunker(
             chunk_size=1000,
             overlap_sentences=1,
@@ -87,6 +89,7 @@ class IngestionService:
 
             self.chunk_repository.delete_document_chunks(document_id)
             self.spreadsheet_repository.delete_rows(document_id)
+            self.document_image_repository.delete_document_image(document_id)
 
             if spreadsheet_rows:
                 self.spreadsheet_repository.replace_rows(
@@ -127,6 +130,7 @@ class IngestionService:
         except Exception as exc:
             message = str(exc).strip() or "Document processing failed."
             self.spreadsheet_repository.delete_rows(document_id)
+            self.document_image_repository.delete_document_image(document_id)
             self.document_repository.update_progress(
                 document_id,
                 status="failed",

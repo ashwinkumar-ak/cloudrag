@@ -15,6 +15,10 @@ SUPPORTED_EXTENSIONS = {
     ".xlsx",
     ".xlsm",
     ".csv",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".webp",
 }
 
 
@@ -47,6 +51,9 @@ def extract_text(filename: str, content: bytes) -> str:
 
     if extension == ".csv":
         return _extract_csv(content)
+
+    if extension in {".jpg", ".jpeg", ".png", ".webp"}:
+        return "[Image document]"
 
     raise DocumentParseError(
         f"Unsupported file type: {extension}"

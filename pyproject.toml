@@ -16,6 +16,7 @@ dependencies = [
     "python-pptx",
     "openpyxl",
     "PyJWT",
+    "Pillow",
 ]
 
 [tool.setuptools.packages.find]

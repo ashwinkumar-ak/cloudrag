@@ -4,6 +4,8 @@ from backend.repositories.chunks import ChunkRepository
 from backend.repositories.documents import DocumentRepository
 from backend.repositories.chat import ChatRepository
 from backend.spreadsheet_query import SpreadsheetQueryService
+from backend.repositories.document_images import DocumentImageRepository
+from backend.storage import DocumentStorage
 
 
 class RAGService:
@@ -14,6 +16,8 @@ class RAGService:
         self.llm_service = LLMService()
         self.chat_repository = ChatRepository()
         self.spreadsheet_query_service = SpreadsheetQueryService()
+        self.document_image_repository = DocumentImageRepository()
+        self.document_storage = DocumentStorage()
 
     def retrieve(
         self,
@@ -45,6 +49,7 @@ class RAGService:
                 user_id=user_id,
             )
 
+            image_row = self.document_image_repository.get_by_document(document_id)
             results.append(
                 {
                     "chunk_id": row[0],
@@ -53,6 +58,9 @@ class RAGService:
                     "chunk_index": row[2],
                     "content": row[3],
                     "distance": float(row[4]),
+                    "image": bool(image_row),
+                    "image_mime_type": image_row[2] if image_row else None,
+                    "image_storage_path": image_row[3] if image_row else None,
                 }
             )
 
@@ -109,12 +117,24 @@ class RAGService:
                 "in the selected documents."
             ])
 
-        context_text = "\n\n".join(
-            f"[Source: {item['filename']}, "
-            f"chunk {item['chunk_index']}]\n"
-            f"{item['content']}"
-            for item in context
-        )
+        image_inputs = []
+        context_sections = []
+        for item in context:
+            context_sections.append(
+                f"[Source: {item['filename']}, chunk {item['chunk_index']}]\n"
+                f"{item['content']}"
+            )
+            if item.get("image") and len(image_inputs) < 1:
+                try:
+                    image_bytes = self.document_storage.download(item["image_storage_path"])
+                    image_inputs.append({
+                        "mime_type": item["image_mime_type"],
+                        "bytes": image_bytes,
+                    })
+                except Exception:
+                    pass
+
+        context_text = "\n\n".join(context_sections)
 
         conversation_text = ""
 
@@ -171,12 +191,13 @@ Rules:
 - Keep the answer concise but complete.
 - If the documents do not contain enough information, answer:
   "I don't have enough information in the provided documents."
+- When image input is provided, use the visual evidence together with the retrieved description.
 
 Return ONLY the final answer as plain text.
 """
 
         llm_service = LLMService(model=model)
-        return context, llm_service.generate_stream(prompt)
+        return context, llm_service.generate_stream(prompt, image_inputs=image_inputs)
 
     def answer(
         self,
@@ -213,12 +234,24 @@ Return ONLY the final answer as plain text.
                 [],
             )
 
-        context_text = "\n\n".join(
-            f"[Source: {item['filename']}, "
-            f"chunk {item['chunk_index']}]\n"
-            f"{item['content']}"
-            for item in context
-        )
+        image_inputs = []
+        context_sections = []
+        for item in context:
+            context_sections.append(
+                f"[Source: {item['filename']}, chunk {item['chunk_index']}]\n"
+                f"{item['content']}"
+            )
+            if item.get("image") and len(image_inputs) < 1:
+                try:
+                    image_bytes = self.document_storage.download(item["image_storage_path"])
+                    image_inputs.append({
+                        "mime_type": item["image_mime_type"],
+                        "bytes": image_bytes,
+                    })
+                except Exception:
+                    pass
+
+        context_text = "\n\n".join(context_sections)
 
         conversation_text = ""
 
@@ -281,11 +314,12 @@ Rules:
 - Keep the answer concise but complete.
 - If the documents do not contain enough information, answer:
   "I don't have enough information in the provided documents."
+- When image input is provided, use the visual evidence together with the retrieved description.
 
 The answer must be the final response to the user.
 """
 
         llm_service = LLMService(model=model)
-        answer = llm_service.generate(prompt)
+        answer = llm_service.generate(prompt, image_inputs=image_inputs)
 
         return answer, context

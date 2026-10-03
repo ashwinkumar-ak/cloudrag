@@ -32,6 +32,12 @@ from backend.spreadsheet import parse_spreadsheet
 from backend.embedding import EmbeddingService
 from backend.health import get_health_status, is_ready
 from backend.ingestion import IngestionService
+from backend.image_intelligence import (
+    describe_image,
+    image_dimensions,
+    is_supported_image,
+    normalized_image_mime_type,
+)
 from backend.llm import LLMGenerationError
 from backend.model_registry import DEFAULT_MODEL, get_model_catalog, validate_model
 from backend.metrics import (
@@ -65,6 +71,7 @@ from backend.repositories.chunks import ChunkRepository
 from backend.repositories.documents import DocumentRepository
 from backend.repositories.chat import ChatRepository
 from backend.repositories.users import UserRepository
+from backend.repositories.document_images import DocumentImageRepository
 from backend.security import (
     ASK_LIMIT,
     ASK_WINDOW,
@@ -92,6 +99,7 @@ comparison_service = DocumentComparisonService()
 chat_repository = ChatRepository()
 user_repository = UserRepository()
 document_storage = DocumentStorage()
+document_image_repository = DocumentImageRepository()
 
 
 def resolve_model(model: str | None) -> str:
@@ -457,6 +465,33 @@ def process_uploaded_document(
                 content=document_storage_content,
             )
 
+        if is_supported_image(filename, content_type):
+            image_mime_type = normalized_image_mime_type(
+                filename=filename,
+                content_type=content_type,
+            )
+            description = describe_image(
+                image_bytes=document_storage_content,
+                mime_type=image_mime_type,
+            )
+            width, height = image_dimensions(document_storage_content)
+            ingestion_service.process_document(
+                document_id=document_id,
+                text=(
+                    f"[Image: {filename}]\n"
+                    f"Visual description:\n{description}"
+                ),
+            )
+            document_image_repository.replace_image(
+                document_id=document_id,
+                mime_type=image_mime_type,
+                storage_path=storage_path,
+                description=description,
+                width=width,
+                height=height,
+            )
+            return
+
         text = extract_text(
             filename=filename,
             content=document_storage_content,
@@ -663,6 +698,12 @@ async def upload_document(
         raise HTTPException(
             status_code=413,
             detail="Uploaded file is too large. Maximum file size is 20 MB.",
+        )
+
+    if is_supported_image(filename, content_type) and len(content) > 8 * 1024 * 1024:
+        raise HTTPException(
+            status_code=413,
+            detail="Image uploads are limited to 8 MB in Phase 2 for reliable multimodal processing.",
         )
 
     if not content:

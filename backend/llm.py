@@ -1,4 +1,5 @@
 import json
+import base64
 import time
 
 import requests
@@ -23,7 +24,7 @@ class LLMService:
 
         self.base_url = settings.gemini_api_base_url
 
-    def generate(self, prompt: str, max_output_tokens: int = 180) -> str:
+    def generate(self, prompt: str, max_output_tokens: int = 180, image_inputs=None) -> str:
         if not self.api_key:
             raise RuntimeError(
                 "GEMINI_API_KEY is not configured."
@@ -42,9 +43,7 @@ class LLMService:
                     json={
                         "contents": [
                             {
-                                "parts": [
-                                    {"text": prompt}
-                                ]
+                                "parts": self._build_parts(prompt, image_inputs)
                             }
                         ],
                         "generationConfig": {
@@ -136,7 +135,7 @@ class LLMService:
             LLM_LATENCY.observe(duration)
 
 
-    def generate_stream(self, prompt: str):
+    def generate_stream(self, prompt: str, image_inputs=None):
         """Yield plain-text Gemini response chunks as they arrive.
 
         The stream is deliberately given a larger output budget than the
@@ -164,9 +163,7 @@ class LLMService:
                     json={
                         "contents": [
                             {
-                                "parts": [
-                                    {"text": prompt}
-                                ]
+                                "parts": self._build_parts(prompt, image_inputs)
                             }
                         ],
                         "generationConfig": {
@@ -258,6 +255,22 @@ class LLMService:
                 response.close()
             duration = time.perf_counter() - start
             LLM_LATENCY.observe(duration)
+
+    def _build_parts(self, prompt: str, image_inputs=None):
+        parts = []
+        for image in image_inputs or []:
+            mime_type = image.get("mime_type")
+            image_bytes = image.get("bytes")
+            if not mime_type or not image_bytes:
+                continue
+            parts.append({
+                "inline_data": {
+                    "mime_type": mime_type,
+                    "data": base64.b64encode(image_bytes).decode("ascii"),
+                }
+            })
+        parts.append({"text": prompt})
+        return parts
 
     def _parse_answer(self, raw_response: str) -> str:
         raw_response = raw_response.strip()
