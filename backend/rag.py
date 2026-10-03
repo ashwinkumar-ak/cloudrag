@@ -9,6 +9,8 @@ from backend.repositories.chat import ChatRepository
 from backend.spreadsheet_query import SpreadsheetQueryService
 from backend.repositories.document_images import DocumentImageRepository
 from backend.storage import DocumentStorage
+from backend.config import settings
+from backend.model_registry import validate_model
 
 
 class RAGService:
