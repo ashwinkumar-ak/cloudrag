@@ -12,7 +12,7 @@ The result is a production-style AI application rather than a simple LLM demo, w
 
 ## Live Demo
 
-**Frontend:** https://cloudrag-cyan.vercel.app/
+**Frontend:** https://cloudrag-v2-eta.vercel.app/
 
 The public deployment runs independently of the local development machine.
 
