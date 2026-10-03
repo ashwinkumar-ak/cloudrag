@@ -1,4 +1,6 @@
 import re
+import io
+from PIL import Image
 from backend.embedding import EmbeddingService
 from backend.llm import LLMService
 from backend.repositories.chunks import ChunkRepository
@@ -107,6 +109,7 @@ class RAGService:
         self,
         context: list[dict],
         max_images: int = 4,
+        model: str | None = None,
     ) -> list[dict]:
         """Load the distinct visual evidence associated with retrieved chunks.
 
@@ -114,6 +117,14 @@ class RAGService:
         figures. Keep those figures distinct so Gemini can reason across them,
         while bounding the multimodal payload for latency and cost.
         """
+        selected_model = validate_model(model or settings.gemini_model)
+        # Gemini 3.5 Flash is substantially more latency-sensitive when several
+        # full-resolution images are included in one request. Keep the Lite
+        # path capable of multi-image synthesis while bounding the Flash
+        # multimodal payload for reliable streaming.
+        if selected_model == "gemini-3.5-flash":
+            max_images = min(max_images, 2)
+
         image_inputs = []
         selected_ids = set()
 
@@ -146,11 +157,12 @@ class RAGService:
                         continue
 
                     image_bytes = self.document_storage.download(image_row[3])
+                    send_bytes, send_mime = self._prepare_multimodal_image(image_bytes, image_row[2])
                     label = image_row[8] or f"Image {image_row[9]}"
                     image_inputs.append({
                         "image_id": image_row[0],
-                        "mime_type": image_row[2],
-                        "bytes": image_bytes,
+                        "mime_type": send_mime,
+                        "bytes": send_bytes,
                         "label": label,
                         "image_index": image_row[9],
                         "filename": item["filename"],
@@ -162,6 +174,19 @@ class RAGService:
                 continue
 
         return image_inputs
+
+    @staticmethod
+    def _prepare_multimodal_image(image_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
+        """Bound image payload size for responsive Gemini multimodal requests."""
+        try:
+            with Image.open(io.BytesIO(image_bytes)) as image:
+                image = image.convert("RGB")
+                image.thumbnail((1600, 1600))
+                output = io.BytesIO()
+                image.save(output, format="JPEG", quality=82, optimize=True)
+                return output.getvalue(), "image/jpeg"
+        except Exception:
+            return image_bytes, mime_type
 
     def answer_stream(
         self,
@@ -199,7 +224,7 @@ class RAGService:
                 "in the selected documents."
             ])
 
-        image_inputs = self._collect_relevant_images(context, max_images=4)
+        image_inputs = self._collect_relevant_images(context, max_images=4, model=model)
         context_sections = []
         for item in context:
             context_sections.append(
@@ -309,7 +334,7 @@ Return ONLY the final answer as plain text.
                 [],
             )
 
-        image_inputs = self._collect_relevant_images(context, max_images=4)
+        image_inputs = self._collect_relevant_images(context, max_images=4, model=model)
         context_sections = []
         for item in context:
             context_sections.append(

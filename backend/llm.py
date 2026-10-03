@@ -170,7 +170,9 @@ class LLMService:
                             "thinkingConfig": {
                                 "thinkingLevel": "minimal"
                             },
-                            "maxOutputTokens": 2048,
+                            # Multimodal Flash requests need a larger shared
+                            # thinking+answer budget to avoid truncated streams.
+                            "maxOutputTokens": 3072 if image_inputs else 2048,
                         },
                     },
                     timeout=120,
