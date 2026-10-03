@@ -137,7 +137,13 @@ class LLMService:
 
 
     def generate_stream(self, prompt: str):
-        """Yield plain-text Gemini response chunks as they arrive."""
+        """Yield plain-text Gemini response chunks as they arrive.
+
+        The stream is deliberately given a larger output budget than the
+        original Phase 1 implementation. Gemini thinking tokens and visible
+        answer tokens share the output budget, so a small limit can otherwise
+        produce truncated or empty answers for harder RAG questions.
+        """
         if not self.api_key:
             raise RuntimeError(
                 "GEMINI_API_KEY is not configured."
@@ -167,7 +173,7 @@ class LLMService:
                             "thinkingConfig": {
                                 "thinkingLevel": "minimal"
                             },
-                            "maxOutputTokens": 512,
+                            "maxOutputTokens": 2048,
                         },
                     },
                     timeout=120,
@@ -217,13 +223,25 @@ class LLMService:
                 if not isinstance(candidates, list) or not candidates:
                     continue
 
-                content = candidates[0].get("content", {})
+                candidate = candidates[0]
+                finish_reason = candidate.get("finishReason")
+                if finish_reason in {"MAX_TOKENS", "SAFETY", "BLOCKLIST", "PROHIBITED_CONTENT"}:
+                    raise LLMGenerationError(
+                        "Gemini stopped generation before producing a complete answer "
+                        f"(finish reason: {finish_reason}). Please try the question again."
+                    )
+
+                content = candidate.get("content", {})
                 parts = content.get("parts", [])
 
                 if not isinstance(parts, list):
                     continue
 
                 for part in parts:
+                    # Gemini thinking responses can contain internal thought
+                    # parts. CloudRAG should stream only the final answer.
+                    if part.get("thought") is True:
+                        continue
                     text = part.get("text")
                     if isinstance(text, str) and text:
                         yield text

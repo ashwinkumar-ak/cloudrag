@@ -1156,6 +1156,9 @@ def ask_stream(
                 f"data: {json.dumps({'session_id': session_id})}\n\n"
             )
         except Exception as exc:
+            # Never mark a partial stream as successful. The frontend can then
+            # show an explicit retryable error instead of leaving the user
+            # with Sources and a truncated answer.
             yield (
                 "event: error\n"
                 f"data: {json.dumps({'detail': str(exc)})}\n\n"
