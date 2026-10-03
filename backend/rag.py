@@ -118,19 +118,28 @@ class RAGService:
             ])
 
         image_inputs = []
+        image_documents_added = set()
         context_sections = []
         for item in context:
             context_sections.append(
                 f"[Source: {item['filename']}, chunk {item['chunk_index']}]\n"
                 f"{item['content']}"
             )
-            if item.get("image") and len(image_inputs) < 1:
+            if item.get("image") and item["document_id"] not in image_documents_added and len(image_inputs) < 3:
                 try:
-                    image_bytes = self.document_storage.download(item["image_storage_path"])
-                    image_inputs.append({
-                        "mime_type": item["image_mime_type"],
-                        "bytes": image_bytes,
-                    })
+                    image_rows = self.document_image_repository.list_by_document(
+                        item["document_id"],
+                        limit=3,
+                    )
+                    for image_row in image_rows:
+                        if len(image_inputs) >= 3:
+                            break
+                        image_bytes = self.document_storage.download(image_row[3])
+                        image_inputs.append({
+                            "mime_type": image_row[2],
+                            "bytes": image_bytes,
+                        })
+                    image_documents_added.add(item["document_id"])
                 except Exception:
                     pass
 
@@ -235,19 +244,28 @@ Return ONLY the final answer as plain text.
             )
 
         image_inputs = []
+        image_documents_added = set()
         context_sections = []
         for item in context:
             context_sections.append(
                 f"[Source: {item['filename']}, chunk {item['chunk_index']}]\n"
                 f"{item['content']}"
             )
-            if item.get("image") and len(image_inputs) < 1:
+            if item.get("image") and item["document_id"] not in image_documents_added and len(image_inputs) < 3:
                 try:
-                    image_bytes = self.document_storage.download(item["image_storage_path"])
-                    image_inputs.append({
-                        "mime_type": item["image_mime_type"],
-                        "bytes": image_bytes,
-                    })
+                    image_rows = self.document_image_repository.list_by_document(
+                        item["document_id"],
+                        limit=3,
+                    )
+                    for image_row in image_rows:
+                        if len(image_inputs) >= 3:
+                            break
+                        image_bytes = self.document_storage.download(image_row[3])
+                        image_inputs.append({
+                            "mime_type": image_row[2],
+                            "bytes": image_bytes,
+                        })
+                    image_documents_added.add(item["document_id"])
                 except Exception:
                     pass
 

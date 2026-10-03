@@ -15,15 +15,18 @@ Phase 2 adds image-aware document intelligence without changing the existing Pha
 
 Google documents that Gemini supports image understanding through inline image data and the Files API; inline data is appropriate for smaller requests, while the Files API is recommended for larger or repeatedly reused media. CloudRAG Phase 2 keeps the original image in Supabase Storage and sends retrieved images as inline data to the selected Gemini model for the current request. This keeps the architecture simple and avoids adding Gemini Files API lifecycle management in this phase.
 
-## Migration
+## Migrations
 
-Apply only:
+Phase 2 standalone images uses migration 009. This embedded-image increment adds migration 010.
+
+Apply, in order if not already applied:
 
 ```text
 backend/migrations/009_image_intelligence.sql
+backend/migrations/010_embedded_document_images.sql
 ```
 
-Do not rerun migrations 001–008.
+Do not rerun migrations 001–008. If 009 is already applied, apply only 010.
 
 ## Supported image types
 
@@ -69,6 +72,12 @@ Answer + Sources
 9. Confirm the answer and Sources appear.
 10. Delete the image and confirm it disappears from the Knowledge Base.
 
-## Phase 2 scope boundary
+## Embedded document images increment
 
-This phase intentionally starts with standalone image documents. Embedded images inside PDFs, DOCX, and PPTX are not automatically extracted yet; that can be added as a later Phase 2 increment without changing the 009 schema.
+PDF, DOCX, and PPTX uploads now extract embedded raster images (up to 8 images per document), store the originals in protected storage, analyze each image with Gemini, and append the visual descriptions to the searchable document text. Retrieved documents can send up to 3 relevant stored images to Gemini during answer generation.
+
+Migration 010 removes the one-image-per-document constraint from migration 009 and records source labels and image ordering. Standalone image documents continue to work unchanged.
+
+## Current Phase 2 boundary
+
+This increment does not add OCR-only indexing, image thumbnails in the Sources panel, or Gemini Files API lifecycle management. Those remain separate future enhancements.

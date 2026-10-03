@@ -1,4 +1,6 @@
 from pathlib import Path
+import zipfile
+from io import BytesIO
 
 import fitz
 from docx import Document as WordDocument
@@ -20,6 +22,118 @@ SUPPORTED_EXTENSIONS = {
     ".png",
     ".webp",
 }
+
+
+class EmbeddedImage:
+    def __init__(self, content: bytes, mime_type: str, label: str):
+        self.content = content
+        self.mime_type = mime_type
+        self.label = label
+
+
+def extract_embedded_images(filename: str, content: bytes) -> list[EmbeddedImage]:
+    """Extract embedded raster images from PDF, DOCX, and PPTX files.
+
+    Images are returned in document order where the source format exposes
+    stable ordering. Duplicate PDF image xrefs are emitted only once.
+    """
+    extension = Path(filename).suffix.lower()
+    if extension == '.pdf':
+        return _extract_pdf_images(content)
+    if extension == '.docx':
+        return _extract_docx_images(content)
+    if extension == '.pptx':
+        return _extract_pptx_images(content)
+    return []
+
+
+def _mime_from_extension(extension: str) -> str | None:
+    return {
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.webp': 'image/webp',
+    }.get(extension.lower())
+
+
+def _extract_pdf_images(content: bytes) -> list[EmbeddedImage]:
+    images: list[EmbeddedImage] = []
+    seen_xrefs: set[int] = set()
+    try:
+        document = fitz.open(stream=content, filetype='pdf')
+        for page_number, page in enumerate(document, start=1):
+            for image_index, image_info in enumerate(page.get_images(full=True), start=1):
+                xref = image_info[0]
+                if xref in seen_xrefs:
+                    continue
+                seen_xrefs.add(xref)
+                extracted = document.extract_image(xref)
+                image_bytes = extracted.get('image')
+                extension = extracted.get('ext', '')
+                mime_type = _mime_from_extension('.' + extension)
+                if not image_bytes or not mime_type:
+                    continue
+                images.append(EmbeddedImage(
+                    content=image_bytes,
+                    mime_type=mime_type,
+                    label=f'PDF page {page_number}, image {image_index}',
+                ))
+        document.close()
+        return images
+    except Exception as exc:
+        raise DocumentParseError('Failed to extract images from PDF document.') from exc
+
+
+def _extract_docx_images(content: bytes) -> list[EmbeddedImage]:
+    images: list[EmbeddedImage] = []
+    try:
+        with zipfile.ZipFile(BytesIO(content)) as archive:
+            media_names = [
+                name for name in archive.namelist()
+                if name.startswith('word/media/') and not name.endswith('/')
+            ]
+            for index, name in enumerate(sorted(media_names), start=1):
+                extension = Path(name).suffix.lower()
+                mime_type = _mime_from_extension(extension)
+                if not mime_type:
+                    continue
+                images.append(EmbeddedImage(
+                    content=archive.read(name),
+                    mime_type=mime_type,
+                    label=f'DOCX embedded image {index}',
+                ))
+        return images
+    except Exception as exc:
+        raise DocumentParseError('Failed to extract images from Word document.') from exc
+
+
+def _extract_pptx_images(content: bytes) -> list[EmbeddedImage]:
+    images: list[EmbeddedImage] = []
+    try:
+        presentation = Presentation(BytesIO(content))
+        seen: set[str] = set()
+        for slide_number, slide in enumerate(presentation.slides, start=1):
+            for image_index, shape in enumerate(slide.shapes, start=1):
+                if not getattr(shape, 'shape_type', None) or not hasattr(shape, 'image'):
+                    continue
+                image = shape.image
+                blob = image.blob
+                extension = '.' + image.ext
+                mime_type = _mime_from_extension(extension)
+                if not mime_type:
+                    continue
+                key = image.sha1
+                if key in seen:
+                    continue
+                seen.add(key)
+                images.append(EmbeddedImage(
+                    content=blob,
+                    mime_type=mime_type,
+                    label=f'PowerPoint slide {slide_number}, image {image_index}',
+                ))
+        return images
+    except Exception as exc:
+        raise DocumentParseError('Failed to extract images from PowerPoint presentation.') from exc
 
 
 class DocumentParseError(RuntimeError):

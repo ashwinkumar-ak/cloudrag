@@ -4,43 +4,50 @@ from backend.config import settings
 
 
 class DocumentImageRepository:
-    def replace_image(
-        self,
-        document_id: int,
-        mime_type: str,
-        storage_path: str,
-        description: str,
-        width: int | None = None,
-        height: int | None = None,
-    ) -> int:
+    def replace_images(self, document_id: int, images: list[dict]) -> list[int]:
         with psycopg.connect(settings.database_url) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    """
-                    INSERT INTO document_images
-                        (document_id, mime_type, storage_path, width, height, description)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (document_id)
-                    DO UPDATE SET
-                        mime_type = EXCLUDED.mime_type,
-                        storage_path = EXCLUDED.storage_path,
-                        width = EXCLUDED.width,
-                        height = EXCLUDED.height,
-                        description = EXCLUDED.description
-                    RETURNING id
-                    """,
-                    (
-                        document_id,
-                        mime_type,
-                        storage_path,
-                        width,
-                        height,
-                        description,
-                    ),
+                    "DELETE FROM document_images WHERE document_id = %s",
+                    (document_id,),
                 )
-                image_id = cursor.fetchone()[0]
+                ids = []
+                for image in images:
+                    cursor.execute(
+                        """
+                        INSERT INTO document_images
+                            (document_id, mime_type, storage_path, width, height, description,
+                             source_label, image_index)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING id
+                        """,
+                        (
+                            document_id,
+                            image["mime_type"],
+                            image["storage_path"],
+                            image.get("width"),
+                            image.get("height"),
+                            image["description"],
+                            image.get("source_label"),
+                            image.get("image_index", 0),
+                        ),
+                    )
+                    ids.append(cursor.fetchone()[0])
             connection.commit()
-        return image_id
+        return ids
+
+    def replace_image(self, document_id: int, mime_type: str, storage_path: str,
+                      description: str, width: int | None = None,
+                      height: int | None = None) -> int:
+        return self.replace_images(document_id, [{
+            "mime_type": mime_type,
+            "storage_path": storage_path,
+            "description": description,
+            "width": width,
+            "height": height,
+            "source_label": "Standalone image",
+            "image_index": 0,
+        }])[0]
 
     def delete_document_image(self, document_id: int) -> None:
         with psycopg.connect(settings.database_url) as connection:
@@ -57,10 +64,30 @@ class DocumentImageRepository:
                 cursor.execute(
                     """
                     SELECT id, document_id, mime_type, storage_path,
-                           width, height, description, created_at
+                           width, height, description, created_at,
+                           source_label, image_index
                     FROM document_images
                     WHERE document_id = %s
+                    ORDER BY image_index, id
+                    LIMIT 1
                     """,
                     (document_id,),
                 )
                 return cursor.fetchone()
+
+    def list_by_document(self, document_id: int, limit: int = 3):
+        with psycopg.connect(settings.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT id, document_id, mime_type, storage_path,
+                           width, height, description, created_at,
+                           source_label, image_index
+                    FROM document_images
+                    WHERE document_id = %s
+                    ORDER BY image_index, id
+                    LIMIT %s
+                    """,
+                    (document_id, limit),
+                )
+                return cursor.fetchall()

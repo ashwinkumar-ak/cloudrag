@@ -27,6 +27,7 @@ from backend.config import settings
 from backend.document_parser import (
     DocumentParseError,
     extract_text,
+    extract_embedded_images,
 )
 from backend.spreadsheet import parse_spreadsheet
 from backend.embedding import EmbeddingService
@@ -447,6 +448,7 @@ def process_uploaded_document(
     filename: str,
     content_type: str,
 ) -> None:
+    embedded_storage_paths: list[str] = []
     try:
         document_repository.update_progress(
             document_id=document_id,
@@ -457,6 +459,17 @@ def process_uploaded_document(
         )
 
         document_storage_content = document_storage.download(storage_path)
+
+        # Remove stale embedded-image objects before rebuilding ingestion.
+        # The original document itself is retained.
+        for old_image in document_image_repository.list_by_document(document_id, limit=100):
+            old_path = old_image[3]
+            old_source = old_image[8]
+            if old_path and old_source != "Standalone image":
+                try:
+                    document_storage.delete(old_path)
+                except StorageError:
+                    pass
 
         spreadsheet_rows = None
         if Path(filename).suffix.lower() in {".xlsx", ".xlsm", ".csv"}:
@@ -497,9 +510,67 @@ def process_uploaded_document(
             content=document_storage_content,
         )
 
+        embedded_images = extract_embedded_images(
+            filename=filename,
+            content=document_storage_content,
+        )
+
+        image_records: list[dict] = []
+        if embedded_images:
+            image_descriptions: list[str] = []
+            max_embedded_images = 8
+
+            for index, embedded in enumerate(embedded_images[:max_embedded_images], start=1):
+                extension = {
+                    "image/jpeg": ".jpg",
+                    "image/png": ".png",
+                    "image/webp": ".webp",
+                }[embedded.mime_type]
+                base_path = Path(storage_path)
+                embedded_path = (
+                    f"{base_path.parent.as_posix()}/embedded/"
+                    f"{base_path.stem}-image-{index}{extension}"
+                )
+
+                description = describe_image(
+                    image_bytes=embedded.content,
+                    mime_type=embedded.mime_type,
+                )
+                width, height = image_dimensions(embedded.content)
+
+                document_storage.upload(
+                    path=embedded_path,
+                    content=embedded.content,
+                    content_type=embedded.mime_type,
+                )
+                embedded_storage_paths.append(embedded_path)
+
+                image_records.append({
+                    "mime_type": embedded.mime_type,
+                    "storage_path": embedded_path,
+                    "description": description,
+                    "width": width,
+                    "height": height,
+                    "source_label": embedded.label,
+                    "image_index": index,
+                })
+                image_descriptions.append(
+                    f"[Embedded image {index} — {embedded.label}]\n"
+                    f"Visual description:\n{description}"
+                )
+
+            if len(embedded_images) > max_embedded_images:
+                image_descriptions.append(
+                    f"[Additional embedded images omitted: "
+                    f"{len(embedded_images) - max_embedded_images}]"
+                )
+
+            if image_descriptions:
+                text = (text.strip() + "\n\n" if text.strip() else "") + "\n\n".join(image_descriptions)
+
         if not text.strip():
             raise DocumentParseError(
-                "No readable text was found in the document."
+                "No readable text or embedded images were found in the document."
             )
 
         ingestion_service.process_document(
@@ -507,7 +578,18 @@ def process_uploaded_document(
             text=text,
             spreadsheet_rows=spreadsheet_rows,
         )
+
+        if image_records:
+            document_image_repository.replace_images(
+                document_id=document_id,
+                images=image_records,
+            )
     except Exception as exc:
+        for path in embedded_storage_paths:
+            try:
+                document_storage.delete(path)
+            except StorageError:
+                pass
         message = str(exc).strip() or "Document processing failed."
         try:
             document_repository.update_progress(
@@ -607,6 +689,15 @@ def delete_document(
                 status_code=502,
                 detail=str(exc),
             ) from exc
+
+    for image_row in document_image_repository.list_by_document(document_id, limit=100):
+        image_path = image_row[3]
+        source_label = image_row[8]
+        if image_path and source_label != "Standalone image":
+            try:
+                document_storage.delete(image_path)
+            except StorageError:
+                pass
 
     deleted = document_repository.delete_document(
         document_id=document_id,
