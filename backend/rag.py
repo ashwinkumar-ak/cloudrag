@@ -1,3 +1,4 @@
+import re
 from backend.embedding import EmbeddingService
 from backend.llm import LLMService
 from backend.repositories.chunks import ChunkRepository
@@ -49,7 +50,27 @@ class RAGService:
                 user_id=user_id,
             )
 
-            image_row = self.document_image_repository.get_by_document(document_id)
+            image_rows = self.document_image_repository.list_by_document(
+                document_id=document_id,
+                limit=8,
+            )
+            image_evidence = []
+            if image_rows:
+                match = re.search(r"\[Embedded image (\d+) —", row[3])
+                for image_row in image_rows:
+                    if image_row[8] == "Standalone image" or (
+                        match and image_row[9] == int(match.group(1))
+                    ):
+                        image_evidence.append({
+                            "image_id": image_row[0],
+                            "source_label": image_row[8],
+                            "image_index": image_row[9],
+                            "mime_type": image_row[2],
+                            "width": image_row[4],
+                            "height": image_row[5],
+                        })
+                        if match:
+                            break
             results.append(
                 {
                     "chunk_id": row[0],
@@ -58,9 +79,10 @@ class RAGService:
                     "chunk_index": row[2],
                     "content": row[3],
                     "distance": float(row[4]),
-                    "image": bool(image_row),
-                    "image_mime_type": image_row[2] if image_row else None,
-                    "image_storage_path": image_row[3] if image_row else None,
+                    "image": bool(image_rows),
+                    "image_mime_type": image_rows[0][2] if image_rows else None,
+                    "image_storage_path": image_rows[0][3] if image_rows else None,
+                    "image_evidence": image_evidence,
                 }
             )
 

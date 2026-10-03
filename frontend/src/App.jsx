@@ -12,6 +12,7 @@ import {
   updateSessionModel,
   streamAskQuestion,
   downloadDocument,
+  fetchDocumentImagePreview,
   compareDocuments,
   runEvaluation,
 } from "./api";
@@ -87,6 +88,8 @@ function App() {
 
 const [knowledgeOpen, setKnowledgeOpen] = useState(false);
 const [selectedCitation, setSelectedCitation] = useState(null);
+const [citationImageUrl, setCitationImageUrl] = useState("");
+const [citationImageLoading, setCitationImageLoading] = useState(false);
 const [systemOpen, setSystemOpen] = useState(false);
   const [evaluationOpen, setEvaluationOpen] = useState(false);
   const [evaluationCases, setEvaluationCases] = useState(
@@ -528,6 +531,40 @@ async function loadHealth() {
     });
   }
 }
+
+useEffect(() => {
+  let objectUrl = "";
+
+  async function loadCitationImage() {
+    const image = selectedCitation?.image_evidence?.[0];
+    setCitationImageUrl("");
+
+    if (!image?.image_id) {
+      setCitationImageLoading(false);
+      return;
+    }
+
+    setCitationImageLoading(true);
+    try {
+      const blob = await fetchDocumentImagePreview(image.image_id);
+      objectUrl = URL.createObjectURL(blob);
+      setCitationImageUrl(objectUrl);
+    } catch (error) {
+      setCitationImageUrl("");
+      setAskError(error.message);
+    } finally {
+      setCitationImageLoading(false);
+    }
+  }
+
+  loadCitationImage();
+
+  return () => {
+    if (objectUrl) {
+      URL.revokeObjectURL(objectUrl);
+    }
+  };
+}, [selectedCitation]);
 
 async function askQuestion() {
   const trimmedQuestion = question.trim();
@@ -1604,6 +1641,35 @@ async function askQuestion() {
                   Chunk {selectedCitation.chunk_index}
                 </span>
               </div>
+
+              {selectedCitation.image_evidence?.length > 0 && (
+                <div className="citation-visual-evidence">
+                  <div className="citation-evidence-label">
+                    Visual evidence
+                  </div>
+
+                  {citationImageLoading && (
+                    <div className="citation-image-loading">Loading image preview…</div>
+                  )}
+
+                  {citationImageUrl && (
+                    <figure className="citation-image-figure">
+                      <img
+                        src={citationImageUrl}
+                        alt={
+                          selectedCitation.image_evidence[0].source_label ||
+                          "Source visual evidence"
+                        }
+                        className="citation-image-preview"
+                      />
+                      <figcaption>
+                        {selectedCitation.image_evidence[0].source_label ||
+                          `Image ${selectedCitation.image_evidence[0].image_index}`}
+                      </figcaption>
+                    </figure>
+                  )}
+                </div>
+              )}
 
               <div className="citation-evidence-label">
                 Source evidence

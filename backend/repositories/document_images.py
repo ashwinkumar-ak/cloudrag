@@ -49,6 +49,23 @@ class DocumentImageRepository:
             "image_index": 0,
         }])[0]
 
+
+    def get_by_id_for_user(self, image_id: int, user_id: int):
+        with psycopg.connect(settings.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT di.id, di.document_id, di.mime_type, di.storage_path,
+                           di.width, di.height, di.description, di.created_at,
+                           di.source_label, di.image_index
+                    FROM document_images di
+                    JOIN documents d ON d.id = di.document_id
+                    WHERE di.id = %s AND d.user_id = %s
+                    """,
+                    (image_id, user_id),
+                )
+                return cursor.fetchone()
+
     def delete_document_image(self, document_id: int) -> None:
         with psycopg.connect(settings.database_url) as connection:
             with connection.cursor() as cursor:

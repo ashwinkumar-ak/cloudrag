@@ -54,6 +54,15 @@ class AskRequest(BaseModel):
     session_id: int | None = None
 
 
+class CitationImage(BaseModel):
+    image_id: int
+    source_label: str | None = None
+    image_index: int
+    mime_type: str
+    width: int | None = None
+    height: int | None = None
+
+
 class Citation(BaseModel):
     chunk_id: int
     document_id: int
@@ -61,6 +70,7 @@ class Citation(BaseModel):
     chunk_index: int
     content: str
     distance: float
+    image_evidence: list[CitationImage] = Field(default_factory=list)
 
 
 class AskResponse(BaseModel):

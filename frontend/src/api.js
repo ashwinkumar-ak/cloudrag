@@ -132,6 +132,25 @@ export async function deleteDocument(documentId) {
   });
 }
 
+export async function fetchDocumentImagePreview(imageId) {
+  const token = getToken();
+  const response = await fetch(
+    `${API_URL}/document-images/${imageId}/preview`,
+    {
+      headers: token
+        ? { Authorization: `Bearer ${token}` }
+        : {},
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Image preview failed with status ${response.status}.`);
+  }
+
+  return response.blob();
+}
+
+
 export async function downloadDocument(documentId) {
   const token = getToken();
 

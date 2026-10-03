@@ -716,6 +716,30 @@ def delete_document(
     }
 
 
+@app.get("/document-images/{image_id}/preview")
+def preview_document_image(
+    image_id: int,
+    user_id: int = Depends(get_current_user_id),
+):
+    row = document_image_repository.get_by_id_for_user(
+        image_id=image_id,
+        user_id=user_id,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Image evidence not found.")
+
+    try:
+        content = document_storage.download(row[3])
+    except StorageError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return Response(
+        content=content,
+        media_type=row[2] or "application/octet-stream",
+        headers={"Cache-Control": "private, max-age=300"},
+    )
+
+
 @app.get(
     "/documents/{document_id}/download",
 )

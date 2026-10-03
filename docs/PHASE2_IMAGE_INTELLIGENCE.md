@@ -81,3 +81,9 @@ Migration 010 removes the one-image-per-document constraint from migration 009 a
 ## Current Phase 2 boundary
 
 This increment does not add OCR-only indexing, image thumbnails in the Sources panel, or Gemini Files API lifecycle management. Those remain separate future enhancements.
+
+## Visual evidence in Sources
+
+Phase 2 now exposes protected previews for images that are directly associated with a retrieved citation. When a source chunk is backed by a standalone image or an embedded image, the citation panel can show the actual visual evidence before the text evidence.
+
+The preview endpoint is authenticated and enforces document ownership. No public storage URL is exposed to the browser.
