@@ -13,6 +13,7 @@ import {
   streamAskQuestion,
   downloadDocument,
   fetchDocumentImagePreview,
+  reindexMultimodalImages,
   compareDocuments,
   runEvaluation,
 } from "./api";
@@ -120,6 +121,8 @@ const [comparisonError, setComparisonError] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
+  const [reindexingImages, setReindexingImages] = useState(false);
+  const [reindexMessage, setReindexMessage] = useState("");
 
   const [health, setHealth] = useState(null);
   const [models, setModels] = useState([]);
@@ -489,6 +492,21 @@ async function deleteSelectedDocuments() {
     window.alert(`Delete failed: ${error.message}`);
   } finally {
     setDeletingDocuments(false);
+  }
+}
+
+async function reindexVisualSearch() {
+  setReindexingImages(true);
+  setReindexMessage("");
+  try {
+    const data = await reindexMultimodalImages();
+    setReindexMessage(
+      `Visual index updated: ${data.embedded} image(s) embedded${data.skipped ? `, ${data.skipped} skipped` : ""}.`
+    );
+  } catch (error) {
+    setReindexMessage(`Visual index update failed: ${error.message}`);
+  } finally {
+    setReindexingImages(false);
   }
 }
 
@@ -1724,6 +1742,18 @@ async function askQuestion() {
           </div>
 
           <div className="panel-body">
+            <div className="multimodal-index-tools">
+              <button
+                type="button"
+                className="secondary-action-button"
+                onClick={reindexVisualSearch}
+                disabled={reindexingImages}
+              >
+                {reindexingImages ? "Building visual index…" : "Build visual search index"}
+              </button>
+              {reindexMessage && <div className="reindex-message">{reindexMessage}</div>}
+            </div>
+
             <div className="upload-box">
               <input
                 id="document-upload"
@@ -1963,19 +1993,23 @@ async function askQuestion() {
                 <div className="search-results">
                   {searchResults.map((result) => (
                     <div
-                      className="search-result"
-                      key={result.chunk_id}
+                      className={`search-result ${result.result_type === "image" ? "search-result-image" : ""}`}
+                      key={`${result.result_type}-${result.chunk_id}`}
                     >
-                      <strong>
-                        {result.filename}
-                      </strong>
+                      <div className="search-result-header">
+                        <strong>{result.filename}</strong>
+                        {result.result_type === "image" && (
+                          <span className="search-result-type">Visual match</span>
+                        )}
+                      </div>
 
                       <p>{result.content}</p>
 
                       <span>
-                        Chunk {result.chunk_index} ·
-                        Distance{" "}
-                        {result.distance.toFixed(4)}
+                        {result.result_type === "image"
+                          ? `${result.image_source_label || "Image"} · `
+                          : `Chunk ${result.chunk_index} · `}
+                        Distance {result.distance.toFixed(4)}
                       </span>
                     </div>
                   ))}

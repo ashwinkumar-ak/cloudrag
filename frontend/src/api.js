@@ -208,6 +208,13 @@ export async function downloadDocument(documentId) {
   }
 }
 
+
+export async function reindexMultimodalImages() {
+  return apiFetch("/multimodal/reindex", {
+    method: "POST",
+  });
+}
+
 export async function searchDocuments(
   query,
   limit = 5,

@@ -29,11 +29,19 @@ class SearchRequest(BaseModel):
 
 
 class SearchResult(BaseModel):
+    result_type: str = "document"
+    filename: str = "unknown"
     chunk_id: int
     document_id: int
     chunk_index: int
     content: str
     distance: float
+    image_id: int | None = None
+    image_mime_type: str | None = None
+    image_source_label: str | None = None
+    image_index: int | None = None
+    image_width: int | None = None
+    image_height: int | None = None
 
 
 class AskRequest(BaseModel):

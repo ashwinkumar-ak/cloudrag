@@ -495,6 +495,10 @@ def process_uploaded_document(
                     f"Visual description:\n{description}"
                 ),
             )
+            image_embedding = embedding_service.embed_image(
+                document_storage_content,
+                image_mime_type,
+            )
             document_image_repository.replace_image(
                 document_id=document_id,
                 mime_type=image_mime_type,
@@ -502,6 +506,7 @@ def process_uploaded_document(
                 description=description,
                 width=width,
                 height=height,
+                embedding=image_embedding,
             )
             return
 
@@ -545,6 +550,11 @@ def process_uploaded_document(
                 )
                 embedded_storage_paths.append(embedded_path)
 
+                image_embedding = embedding_service.embed_image(
+                    embedded.content,
+                    embedded.mime_type,
+                )
+
                 image_records.append({
                     "mime_type": embedded.mime_type,
                     "storage_path": embedded_path,
@@ -553,6 +563,7 @@ def process_uploaded_document(
                     "height": height,
                     "source_label": embedded.label,
                     "image_index": index,
+                    "embedding": image_embedding,
                 })
                 image_descriptions.append(
                     f"[Embedded image {index} — {embedded.label}]\n"
@@ -1007,6 +1018,38 @@ def compare_documents(
 
 
 # ---------------------------------------------------------------------------
+# Multimodal index maintenance
+# ---------------------------------------------------------------------------
+
+
+@app.post("/multimodal/reindex")
+def reindex_multimodal_images(
+    user_id: int = Depends(get_current_user_id),
+):
+    """Build Gemini Embedding 2 vectors for existing stored images."""
+    image_rows = document_image_repository.list_for_user(user_id=user_id)
+    embedded = 0
+    skipped = 0
+
+    for row in image_rows:
+        image_id, _, mime_type, storage_path = row[0], row[1], row[2], row[3]
+        try:
+            image_bytes = document_storage.download(storage_path)
+            vector = embedding_service.embed_image(image_bytes, mime_type)
+            document_image_repository.update_embedding(image_id, vector)
+            embedded += 1
+        except Exception:
+            skipped += 1
+
+    return {
+        "status": "completed",
+        "processed": len(image_rows),
+        "embedded": embedded,
+        "skipped": skipped,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Search
 # ---------------------------------------------------------------------------
 
@@ -1048,17 +1091,55 @@ def search(
         limit=request.limit,
         document_ids=document_ids,
     )
+    image_rows = document_image_repository.search_images(
+        embedding=query_embedding,
+        user_id=user_id,
+        limit=request.limit,
+        document_ids=document_ids,
+    )
 
-    return [
-        SearchResult(
-            chunk_id=row[0],
+    results = []
+    for row in rows:
+        results.append({
+            "sort_distance": float(row[4]),
+            "result": SearchResult(
+                result_type="document",
+                chunk_id=row[0],
+                document_id=row[1],
+                chunk_index=row[2],
+                content=row[3],
+                distance=float(row[4]),
+            ),
+        })
+
+    for row in image_rows:
+        filename = document_repository.get_filename(
             document_id=row[1],
-            chunk_index=row[2],
-            content=row[3],
-            distance=float(row[4]),
-        )
-        for row in rows
-    ]
+            user_id=user_id,
+        ) or "unknown"
+        results.append({
+            "sort_distance": float(row[10]),
+            "result": SearchResult(
+                result_type="image",
+                chunk_id=-int(row[0]),
+                document_id=row[1],
+                chunk_index=int(row[9] or 0),
+                content=(
+                    f"[Visual evidence: {row[8] or 'Image'}]\n"
+                    f"Visual description:\n{row[6] or 'No visual description available.'}"
+                ),
+                distance=float(row[10]),
+                image_id=row[0],
+                image_mime_type=row[2],
+                image_source_label=row[8],
+                image_index=row[9],
+                image_width=row[4],
+                image_height=row[5],
+            ),
+        })
+
+    results.sort(key=lambda item: item["sort_distance"])
+    return [item["result"] for item in results[:request.limit]]
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,8 @@
-import os
+import base64
+import io
 import time
+
+from PIL import Image
 
 import requests
 
@@ -89,3 +92,64 @@ class EmbeddingService:
         finally:
             duration = time.perf_counter() - start
             EMBEDDING_LATENCY.observe(duration)
+    def embed_image(self, image_bytes: bytes, mime_type: str) -> list[float]:
+        if not image_bytes:
+            raise ValueError("Image bytes must not be empty")
+        if not self.api_key:
+            raise RuntimeError("GEMINI_API_KEY is not configured.")
+
+        prepared_bytes = image_bytes
+        prepared_mime = mime_type
+        try:
+            with Image.open(io.BytesIO(image_bytes)) as image:
+                image = image.convert("RGB")
+                image.thumbnail((1600, 1600))
+                output = io.BytesIO()
+                image.save(output, format="JPEG", quality=82, optimize=True)
+                prepared_bytes = output.getvalue()
+                prepared_mime = "image/jpeg"
+        except Exception:
+            pass
+
+        start = time.perf_counter()
+        response = None
+        try:
+            response = requests.post(
+                f"{self.base_url}/models/{self.model_name}:embedContent",
+                headers={
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": self.api_key,
+                },
+                json={
+                    "content": {
+                        "parts": [{
+                            "inline_data": {
+                                "mime_type": prepared_mime,
+                                "data": base64.b64encode(prepared_bytes).decode("ascii"),
+                            }
+                        }]
+                    },
+                    "output_dimensionality": self.dimension,
+                },
+                timeout=90,
+            )
+            response.raise_for_status()
+            data = response.json()
+            embedding = data.get("embedding", {}).get("values")
+            if not isinstance(embedding, list) or len(embedding) != self.dimension:
+                raise ValueError(
+                    f"Expected {self.dimension} image embedding dimensions, "
+                    f"got {len(embedding) if isinstance(embedding, list) else 'invalid response'}"
+                )
+            return embedding
+        except requests.RequestException as exc:
+            if response is not None:
+                raise RuntimeError(
+                    f"Gemini image embedding request failed (HTTP {response.status_code}): "
+                    f"{response.text[:2000]}"
+                ) from exc
+            raise RuntimeError("Gemini image embedding service could not generate an embedding.") from exc
+        finally:
+            duration = time.perf_counter() - start
+            EMBEDDING_LATENCY.observe(duration)
+

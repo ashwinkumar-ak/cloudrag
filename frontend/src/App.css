@@ -3916,3 +3916,75 @@ input {
   font-size: 10px;
   text-align: center;
 }
+
+
+.search-result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.search-result-type {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.72;
+}
+
+.search-result-image {
+  border-left: 3px solid currentColor;
+}
+
+
+.multimodal-index-tools {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 10px;
+  border: 1px solid var(--cr-border);
+  border-radius: 10px;
+  background: var(--cr-surface);
+}
+
+.secondary-action-button {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--cr-border);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.secondary-action-button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.reindex-message {
+  font-size: 0.78rem;
+  color: var(--cr-text-muted);
+  line-height: 1.4;
+}
+
+.search-result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.search-result-type {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.72;
+}
+
+.search-result-image {
+  border-left: 3px solid currentColor;
+}

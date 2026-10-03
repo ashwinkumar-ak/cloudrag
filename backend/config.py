@@ -13,6 +13,8 @@ class Settings(BaseSettings):
 
     retrieval_distance_threshold: float = 0.20
 
+    multimodal_retrieval_distance_threshold: float = 0.35
+
     jwt_secret_key: str = (
         "cloudrag-development-secret-change-this"
     )

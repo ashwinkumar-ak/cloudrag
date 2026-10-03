@@ -32,39 +32,52 @@ class RAGService:
         document_ids: list[int] | None = None,
     ) -> list[dict]:
 
-        query_embedding = self.embedding_service.embed(
-            question
-        )
+        query_embedding = self.embedding_service.embed(question)
 
         rows = self.chunk_repository.hybrid_search_chunks(
             embedding=query_embedding,
             query=question,
             user_id=user_id,
-            limit=limit,
+            limit=max(limit * 3, 12),
             document_ids=document_ids,
         )
 
-        results = []
+        image_rows = self.document_image_repository.search_images(
+            embedding=query_embedding,
+            user_id=user_id,
+            limit=max(limit * 3, 12),
+            document_ids=document_ids,
+        )
+
+        candidates = []
 
         for row in rows:
             document_id = row[1]
-
             filename = self.document_repository.get_filename(
                 document_id=document_id,
                 user_id=user_id,
             )
 
-            image_rows = self.document_image_repository.list_by_document(
+            image_rows_for_document = self.document_image_repository.list_by_document(
                 document_id=document_id,
                 limit=8,
             )
             image_evidence = []
-            if image_rows:
+            if image_rows_for_document:
+                # A text chunk may carry an embedded-image marker, or the
+                # chunk may be the synthetic text representation of a
+                # standalone image. Never attach an arbitrary image from the
+                # same document merely because that document contains images.
                 match = re.search(r"\[Embedded image (\d+) —", row[3])
-                for image_row in image_rows:
-                    if image_row[8] == "Standalone image" or (
-                        match and image_row[9] == int(match.group(1))
-                    ):
+                target_index = int(match.group(1)) if match else None
+                for image_row in image_rows_for_document:
+                    is_standalone_chunk = (
+                        image_row[8] == "Standalone image" and target_index is None
+                    )
+                    is_matching_embedded_image = (
+                        target_index is not None and image_row[9] == target_index
+                    )
+                    if is_standalone_chunk or is_matching_embedded_image:
                         image_evidence.append({
                             "image_id": image_row[0],
                             "source_label": image_row[8],
@@ -73,24 +86,66 @@ class RAGService:
                             "width": image_row[4],
                             "height": image_row[5],
                         })
-                        if match:
-                            break
-            results.append(
-                {
-                    "chunk_id": row[0],
-                    "document_id": document_id,
-                    "filename": filename or "unknown",
-                    "chunk_index": row[2],
-                    "content": row[3],
-                    "distance": float(row[4]),
-                    "image": bool(image_rows),
-                    "image_mime_type": image_rows[0][2] if image_rows else None,
-                    "image_storage_path": image_rows[0][3] if image_rows else None,
-                    "image_evidence": image_evidence,
-                }
-            )
+                        break
 
-        return results
+            candidates.append({
+                "rank_score": 1.0 - float(row[4]),
+                "chunk_id": row[0],
+                "document_id": document_id,
+                "filename": filename or "unknown",
+                "chunk_index": row[2],
+                "content": row[3],
+                "distance": float(row[4]),
+                "image": bool(image_evidence),
+                "image_mime_type": image_evidence[0]["mime_type"] if image_evidence else None,
+                "image_storage_path": None,
+                "image_evidence": image_evidence,
+            })
+
+        for image_row in image_rows:
+            document_id = image_row[1]
+            filename = self.document_repository.get_filename(
+                document_id=document_id,
+                user_id=user_id,
+            )
+            candidates.append({
+                "rank_score": 1.0 - float(image_row[10]),
+                "chunk_id": -int(image_row[0]),
+                "document_id": document_id,
+                "filename": filename or "unknown",
+                "chunk_index": int(image_row[9] or 0),
+                "content": (
+                    f"[Visual evidence: {image_row[8] or 'Image'}]\n"
+                    f"Visual description:\n{image_row[6] or 'No visual description available.'}"
+                ),
+                "distance": float(image_row[10]),
+                "image": True,
+                "image_mime_type": image_row[2],
+                "image_storage_path": image_row[3],
+                "image_id": image_row[0],
+                "image_evidence": [{
+                    "image_id": image_row[0],
+                    "source_label": image_row[8],
+                    "image_index": image_row[9],
+                    "mime_type": image_row[2],
+                    "width": image_row[4],
+                    "height": image_row[5],
+                }],
+            })
+
+        candidates.sort(key=lambda item: item["rank_score"], reverse=True)
+        selected = []
+        seen = set()
+        for item in candidates:
+            key = (item["chunk_id"], item["document_id"])
+            if key in seen:
+                continue
+            seen.add(key)
+            selected.append(item)
+            if len(selected) >= limit:
+                break
+
+        return selected
 
     def build_context(
         self,
@@ -135,24 +190,33 @@ class RAGService:
                 continue
 
             try:
-                image_rows = self.document_image_repository.list_by_document(
-                    item["document_id"],
-                    limit=8,
-                )
-                match = re.search(r"\[Embedded image (\d+) —", item.get("content", ""))
-                target_index = int(match.group(1)) if match else None
+                direct_image_id = item.get("image_id")
+                if direct_image_id:
+                    image_rows = self.document_image_repository.list_by_document(
+                        item["document_id"],
+                        limit=8,
+                    )
+                    candidates = [
+                        row for row in image_rows
+                        if row[0] == direct_image_id
+                    ]
+                else:
+                    image_rows = self.document_image_repository.list_by_document(
+                        item["document_id"],
+                        limit=8,
+                    )
+                    match = re.search(r"\[Embedded image (\d+) —", item.get("content", ""))
+                    target_index = int(match.group(1)) if match else None
 
-                candidates = []
-                for image_row in image_rows:
-                    if image_row[8] == "Standalone image":
-                        candidates.append(image_row)
-                    elif target_index is not None and image_row[9] == target_index:
-                        candidates.append(image_row)
+                    candidates = []
+                    for image_row in image_rows:
+                        if image_row[8] == "Standalone image":
+                            candidates.append(image_row)
+                        elif target_index is not None and image_row[9] == target_index:
+                            candidates.append(image_row)
 
-                # If a retrieved chunk is image-aware but the exact figure could
-                # not be identified, use the first available image as fallback.
-                if not candidates and image_rows:
-                    candidates = [image_rows[0]]
+                    if not candidates and image_rows:
+                        candidates = [image_rows[0]]
 
                 for image_row in candidates:
                     if len(image_inputs) >= max_images or image_row[0] in selected_ids:
