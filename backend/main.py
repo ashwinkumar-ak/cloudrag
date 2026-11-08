@@ -64,9 +64,11 @@ from backend.models import (
     CompareResponse,
     SessionResponse,
     UserResponse,
+    EvaluationCase,
 )
 from backend.rag import RAGService
 from backend.comparison import DocumentComparisonService
+from backend.evaluation import RAGEvaluationService
 from backend.storage import DocumentStorage, StorageError
 from backend.repositories.chunks import ChunkRepository
 from backend.repositories.documents import DocumentRepository
@@ -96,6 +98,7 @@ chunk_repository = ChunkRepository()
 document_repository = DocumentRepository()
 ingestion_service = IngestionService()
 rag_service = RAGService()
+evaluation_service = RAGEvaluationService(rag_service=rag_service)
 comparison_service = DocumentComparisonService()
 chat_repository = ChatRepository()
 user_repository = UserRepository()
@@ -304,6 +307,34 @@ def readiness_check():
         )
 
     return {"status": "ready"}
+
+
+
+
+# ---------------------------------------------------------------------------
+# RAG evaluation
+# ---------------------------------------------------------------------------
+
+
+@app.post(
+    "/evaluation/run",
+    tags=["Evaluation"],
+)
+def run_rag_evaluation(
+    cases: list[EvaluationCase],
+    user_id: int = Depends(get_current_user_id),
+):
+    """Run a batch of reference questions against the authenticated user's documents."""
+    if not cases:
+        raise HTTPException(
+            status_code=400,
+            detail="At least one evaluation case is required.",
+        )
+
+    return evaluation_service.run(
+        cases=[case.model_dump() for case in cases],
+        user_id=user_id,
+    )
 
 
 # ---------------------------------------------------------------------------

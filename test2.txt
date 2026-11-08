@@ -1,0 +1,16 @@
+Sample company report
+
+Company: Acme Technologies
+- Q1 revenue: ₹10 lakh
+- Q2 revenue: ₹15 lakh
+- Q3 revenue: ₹12 lakh
+- Q4 revenue: ₹20 lakh
+- Annual revenue: ₹57 lakh
+- Highest revenue quarter: Q4
+- Employee count: 120
+- Headquarters: Bengaluru
+Business objectives
+- Expand AI-powered services.
+- Improve customer retention.
+- Increase operational efficiency.
+- Expand into international markets.

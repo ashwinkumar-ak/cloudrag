@@ -12,9 +12,11 @@ STOP_WORDS = {
 
 
 class RAGEvaluationService:
-    def __init__(self):
-        from backend.rag import RAGService
-        self.rag_service = RAGService()
+    def __init__(self, rag_service=None):
+        if rag_service is None:
+            from backend.rag import RAGService
+            rag_service = RAGService()
+        self.rag_service = rag_service
 
     @staticmethod
     def _tokens(text: str) -> set[str]:
