@@ -203,3 +203,9 @@ class EvaluationCase(BaseModel):
     expected_document_ids: list[int] = Field(default_factory=list)
     document_ids: list[int] = Field(default_factory=list)
     limit: int = Field(default=5, ge=1, le=10)
+
+
+class EvaluationRunRequest(BaseModel):
+    """Batch evaluation payload used by the CloudRAG frontend."""
+    cases: list[EvaluationCase] = Field(min_length=1)
+    limit: int = Field(default=5, ge=1, le=10)

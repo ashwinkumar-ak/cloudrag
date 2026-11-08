@@ -65,6 +65,7 @@ from backend.models import (
     SessionResponse,
     UserResponse,
     EvaluationCase,
+    EvaluationRunRequest,
 )
 from backend.rag import RAGService
 from backend.comparison import DocumentComparisonService
@@ -321,19 +322,14 @@ def readiness_check():
     tags=["Evaluation"],
 )
 def run_rag_evaluation(
-    cases: list[EvaluationCase],
+    request: EvaluationRunRequest,
     user_id: int = Depends(get_current_user_id),
 ):
-    """Run a batch of reference questions against the authenticated user's documents."""
-    if not cases:
-        raise HTTPException(
-            status_code=400,
-            detail="At least one evaluation case is required.",
-        )
-
+    """Run the frontend's batch payload against the authenticated user's documents."""
     return evaluation_service.run(
-        cases=[case.model_dump() for case in cases],
+        cases=[case.model_dump() for case in request.cases],
         user_id=user_id,
+        default_limit=request.limit,
     )
 
 
